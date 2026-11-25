@@ -548,6 +548,11 @@ def api_registro():
             nombre = (b.get("nombre") or "").strip()
             if not nombre or len(nombre) > 31:
                 return jsonify(error="nombre de 1 a 31 caracteres"), 400
+            if not b.get("rehacer"):
+                # Registrar un nombre que ya existe reemplaza la huella de esa persona: se pregunta antes
+                gente = datos(requests.get(f"http://{ip}/api/v1/faces", auth=AUTH, timeout=10)).get("people", [])
+                if any(p.get("name") == nombre for p in gente):
+                    return jsonify(existe=True, error=f"ya existe {nombre}"), 409
             estado["pausa_hasta"] = time.time() + 5
             r = requests.post(f"http://{ip}/api/v1/faces/enroll", json={"name": nombre, "still": True},
                               auth=AUTH, timeout=10).json()

@@ -296,7 +296,14 @@ async function post(url, b) {
 async function registrar() {
   const nombre = document.getElementById('regNombre').value.trim();
   if (!nombre) { regMsg('⚠ escribe un nombre'); return; }
-  const r = await post('/api/registro', {ip: cfgIp(), nombre});
+  let r = await post('/api/registro', {ip: cfgIp(), nombre});
+  if (r.existe) {
+    // El nombre ya está en la cámara: registrar de nuevo REEMPLAZA su huella
+    if (!confirm(`Ya existe "${nombre}" en la cámara.\n\nSi sigues, su huella se reemplaza con la de quien se registre ahora.\n¿Es la misma persona y quieres rehacer su registro?`)) {
+      regMsg('Cancelado: usa otro nombre para una persona nueva'); return;
+    }
+    r = await post('/api/registro', {ip: cfgIp(), nombre, rehacer: true});
+  }
   if (r.error) { regMsg('⚠ ' + r.error); return; }
   regMsg('Registrando… párate a ~2 m mirando a la cámara');
   regInicio = Date.now() / 1000;
