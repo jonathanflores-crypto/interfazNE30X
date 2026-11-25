@@ -28,6 +28,12 @@ def instalar(app, db, estado, auth, camaras, datos_dir):
         con.execute("""CREATE TABLE IF NOT EXISTS testigos (
             tid TEXT PRIMARY KEY, camara TEXT, seq INTEGER, persona_id INTEGER, nombre TEXT, k INTEGER,
             plantilla TEXT, creado INTEGER, score REAL, emb TEXT, bajado REAL)""")
+        # App 977: también los intentos de reconocimiento llegan como testigos (tipo, 2.º lugar, ojos, confianza)
+        tcols = [r[1] for r in con.execute("PRAGMA table_info(testigos)")]
+        for c, t in (("tipo", "TEXT"), ("segundo", "TEXT"), ("score2", "REAL"), ("ojos", "REAL"), ("conf", "REAL"),
+                     ("archivo", "TEXT")):
+            if c not in tcols:
+                con.execute(f"ALTER TABLE testigos ADD COLUMN {c} {t}")
         cols = [r[1] for r in con.execute("PRAGMA table_info(intentos)")]
         if "emb" not in cols:
             con.execute("ALTER TABLE intentos ADD COLUMN emb TEXT")
@@ -48,19 +54,35 @@ def instalar(app, db, estado, auth, camaras, datos_dir):
                 continue
             tid = re.sub(r"[^A-Za-z0-9_.-]", "_", t["id"])
             r = cam(ip, "GET", "faces/testigo/picture", params={"seq": t["seq"]})
-            if r.status_code != 200 or not r.content.startswith(b"BM"):
-                continue
-            carpeta = os.path.join(testigos_dir, tid)
+            if r.status_code != 200 or not r.content.startswith(b"BM") or len(r.content) <= 54:
+                continue                     # sin confirmar: la cámara la conserva para la siguiente vuelta
+            tipo = t.get("type", "registro")
+            if tipo == "registro":
+                carpeta = os.path.join(testigos_dir, tid)
+            else:                            # App 977: intentos de reconocimiento, por cámara y día
+                dia = time.strftime("%Y-%m-%d", time.localtime(t.get("created") or time.time()))
+                carpeta = os.path.join(datos_dir, "fotos_cola", ip.replace(".", "_"), dia, tid)
             os.makedirs(carpeta, exist_ok=True)
-            with open(os.path.join(carpeta, "crop.bmp"), "wb") as fh:
+            archivo = os.path.join(carpeta, "crop.bmp")
+            with open(archivo, "wb") as fh:
                 fh.write(r.content)
+                fh.flush()
+                os.fsync(fh.fileno())
             meta = dict(t, camara=ip, bajado=time.time())
             with open(os.path.join(carpeta, "testigo.json"), "w") as fh:
                 json.dump(meta, fh)
+                fh.flush()
+                os.fsync(fh.fileno())
+            if os.path.getsize(archivo) != len(r.content):
+                continue                     # no quedó completa: no se confirma
             with db() as con:
-                con.execute("INSERT OR REPLACE INTO testigos VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                con.execute("INSERT OR REPLACE INTO testigos (tid, camara, seq, persona_id, nombre, k, plantilla, creado, "
+                            "score, emb, bajado, tipo, segundo, score2, ojos, conf, archivo) "
+                            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                             (tid, ip, t["seq"], t.get("person_id"), t.get("name"), t.get("k"), t.get("template"),
-                             t.get("created"), t.get("score"), json.dumps(t.get("embedding")), meta["bajado"]))
+                             t.get("created"), t.get("score"), json.dumps(t.get("embedding")), meta["bajado"],
+                             tipo, t.get("second"), t.get("score2"), t.get("eye_px"), t.get("conf"),
+                             os.path.relpath(archivo, datos_dir)))
             hechos.append(t["seq"])
         if hechos:
             cam(ip, "POST", "faces/testigos/ack", json={"seqs": hechos})
@@ -77,7 +99,7 @@ def instalar(app, db, estado, auth, camaras, datos_dir):
             cam(ip, "POST", "faces/config", json={"debug_embedding": True})   # la cámara no lo guarda al reiniciar
         pendientes = tg.get("pending", 0)
         vueltas = 0
-        while pendientes and vueltas < 4:     # hasta 200 por ciclo, para no acaparar la cámara
+        while pendientes and vueltas < 10:    # hasta 500 por ciclo (App 977: también llegan los intentos)
             n, pendientes = bajar_testigos(ip)
             if n == 0:
                 break
@@ -86,17 +108,17 @@ def instalar(app, db, estado, auth, camaras, datos_dir):
 
     def crop_testigo(ip, seq):
         with db() as con:
-            r = con.execute("SELECT tid FROM testigos WHERE camara=? AND seq=? ORDER BY bajado DESC LIMIT 1",
+            r = con.execute("SELECT tid FROM testigos WHERE camara=? AND seq=? AND COALESCE(tipo, 'registro')='registro' ORDER BY bajado DESC LIMIT 1",
                             (ip, seq)).fetchone()
         return os.path.join(testigos_dir, r["tid"], "crop.bmp") if r else None
 
     @app.route("/api/testigos")
     def api_testigos():
         ip = request.args.get("camara", "")
-        q = "SELECT tid, camara, seq, persona_id, nombre, k, plantilla, creado, score, bajado FROM testigos"
+        q = "SELECT tid, camara, seq, persona_id, nombre, k, plantilla, creado, score, bajado FROM testigos WHERE COALESCE(tipo, 'registro')='registro'"
         args = ()
         if ip:
-            q += " WHERE camara=?"
+            q += " AND camara=?"
             args = (ip,)
         with db() as con:
             filas = [dict(r) for r in con.execute(q + " ORDER BY bajado DESC LIMIT 500", args)]
@@ -225,7 +247,7 @@ def instalar(app, db, estado, auth, camaras, datos_dir):
         else:                              # sin respaldo: los testigos bajados
             fuente = "testigos"
             with db() as con:
-                for r in con.execute("SELECT nombre, persona_id, k, emb FROM testigos WHERE camara=?", (ip,)):
+                for r in con.execute("SELECT nombre, persona_id, k, emb FROM testigos WHERE camara=? AND COALESCE(tipo, 'registro')='registro'", (ip,)):
                     if r["emb"] and r["emb"] != "null":
                         galeria.append(dict(nombre=r["nombre"], pid=r["persona_id"], tipo="foto", k=r["k"],
                                             emb=json.loads(r["emb"])))

@@ -258,8 +258,13 @@ async function verRespaldos() {
     : '<option value="">(sin respaldos)</option>';
   const t = await (await fetch('/api/testigos?camara=' + encodeURIComponent(ip))).json();
   const c = t.camaras[ip];
-  document.getElementById('tgEstado').textContent = c
-    ? `${t.testigos.length} bajados a esta máquina · ${c.pending} pendientes en la cámara (máx. ${c.max})${c.dropped ? ' · ⚠ ' + c.dropped + ' perdidos por cola llena' : ''}`
+  const el = document.getElementById('tgEstado');
+  // App 977: la cola guarda todas las fotos (registro e intentos) hasta que este servidor las confirma
+  el.innerHTML = c
+    ? (c.full ? '<b style="color:var(--mal)">⚠ COLA LLENA en la cámara: no está guardando fotos nuevas (LED con doble destello)</b> · ' : '') +
+      `${t.testigos.length} fotos de registro en esta máquina · ${c.pending} fotos pendientes en la cámara` +
+      (c.room >= 0 && c.room !== undefined ? ` (caben ${c.room} más)` : ` (máx. ${c.max})`) +
+      (c.dropped ? ` · ⚠ ${c.dropped} no guardadas por cola llena` : '') + (c.lost ? ` · ${c.lost} perdidas (flash ocupada)` : '')
     : `${t.testigos.length} bajados · la cámara no tiene testigos (firmware anterior a 964)`;
 }
 async function respaldar() {
