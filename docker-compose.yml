@@ -23,5 +23,6 @@ services:
       MQTT_HOST: mqtt
       MQTT_PORT: "1883"
       DB_PATH: /data/monitor.db
+      HOST_IP: ${HOST_IP:-}   # la pone levantar/actualizar: IP de esta PC en la red (se muestra en la página)
     volumes:
       - ./data:/data         # base, fotos y testigos: se crea vacía la primera vez, no se sube a git

@@ -43,7 +43,9 @@ Doble clic en **`levantar.bat`** (en la carpeta `interfazNE30X`), o desde la ter
   `buscar_camaras.bat` (ver [Buscar las cámaras](#buscar-las-cámaras-en-la-red)). Abre el `.env` (`notepad .env`), pon las IPs de las cámaras
   (`CAMARAS=192.168.x.x,192.168.x.y`) y su contraseña (`CAM_PASS=`), guarda y vuelve a correr
   `.\levantar.bat`.
-- Al terminar muestra la dirección del broker (`IP:1883`) que se configura en las cámaras.
+- Al terminar muestra un recuadro con la IP de esta PC: la dirección de la interfaz (`http://IP:8095`, también
+  desde otro equipo) y la del broker MQTT (`IP` puerto `1883`) que se configura en las cámaras. La misma IP sale
+  arriba en la página.
 - Si el **Firewall de Windows** pregunta, permite Docker en redes **privadas** (puertos 8095 y 1883); si no,
   las cámaras no llegan al broker.
 
@@ -76,7 +78,9 @@ cd interfazNE30X
   `./scripts/buscar_camaras.sh` (ver [Buscar las cámaras](#buscar-las-cámaras-en-la-red)). Abre el `.env` (`open -e .env`), pon las IPs de las cámaras
   (`CAMARAS=192.168.x.x,192.168.x.y`) y su contraseña (`CAM_PASS=`), guarda y vuelve a correr
   `./scripts/levantar.sh`.
-- Al terminar muestra la dirección del broker (`IP:1883`) que se configura en las cámaras.
+- Al terminar muestra un recuadro con la IP de esta PC: la dirección de la interfaz (`http://IP:8095`, también
+  desde otro equipo) y la del broker MQTT (`IP` puerto `1883`) que se configura en las cámaras. La misma IP sale
+  arriba en la página.
 - Si macOS pregunta si Docker puede aceptar conexiones entrantes, permítelo.
 
 ### 4. Actualizar

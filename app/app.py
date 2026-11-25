@@ -564,7 +564,7 @@ def api_borrar():
 # ---------------- Web ----------------
 @app.route("/")
 def inicio():
-    return render_template("index.html", camaras=CAMARAS)
+    return render_template("index.html", host_ip=os.environ.get("HOST_IP", ""), camaras=CAMARAS)
 
 
 def nombres_mqtt(cam):

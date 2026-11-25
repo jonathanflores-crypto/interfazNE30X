@@ -47,6 +47,8 @@
 <body data-pestana="plataforma">
 <header>
   <h1>Novus Monitor</h1>
+  {% if host_ip %}<span class="chip" title="Pon esta IP como servidor MQTT en cada cámara (puerto 1883)">
+    Esta PC: <b>{{ host_ip }}</b> · interfaz <b>http://{{ host_ip }}:8095</b> · broker MQTT <b>{{ host_ip }}:1883</b></span>{% endif %}
   <span class="chip" id="mqtt">MQTT: …</span>
   <label class="chip">Ver: <select id="verCamara" onchange="cambiarCamara(this.value)">
     <option value="">Todas</option>

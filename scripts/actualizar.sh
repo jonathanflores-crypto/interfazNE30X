@@ -3,5 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 git pull --ff-only
+. scripts/ip_comun.sh
+export HOST_IP="$(ip_de_esta_pc)"
 docker compose up -d --build
-echo "Actualizado: http://localhost:8095"
+mostrar_direcciones "$HOST_IP"
