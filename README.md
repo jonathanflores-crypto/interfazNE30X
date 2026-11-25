@@ -35,7 +35,8 @@ cd interfazNE30X
 ```powershell
 .\scripts\levantar.ps1
 ```
-- La primera vez crea el archivo `.env` y se detiene. Ábrelo (`notepad .env`), pon las IPs de las cámaras
+- La primera vez crea el archivo `.env` y se detiene. Para saber las IPs de las cámaras corre
+  `.\scripts\buscar_camaras.ps1` (ver [Buscar las cámaras](#buscar-las-cámaras-en-la-red)). Abre el `.env` (`notepad .env`), pon las IPs de las cámaras
   (`CAMARAS=192.168.x.x,192.168.x.y`) y su contraseña (`CAM_PASS=`), guarda y vuelve a correr
   `.\scripts\levantar.ps1`.
 - Al terminar muestra la dirección del broker (`IP:1883`) que se configura en las cámaras.
@@ -73,7 +74,8 @@ cd interfazNE30X
 ```bash
 ./scripts/levantar.sh
 ```
-- La primera vez crea el archivo `.env` y se detiene. Ábrelo (`open -e .env`), pon las IPs de las cámaras
+- La primera vez crea el archivo `.env` y se detiene. Para saber las IPs de las cámaras corre
+  `./scripts/buscar_camaras.sh` (ver [Buscar las cámaras](#buscar-las-cámaras-en-la-red)). Abre el `.env` (`open -e .env`), pon las IPs de las cámaras
   (`CAMARAS=192.168.x.x,192.168.x.y`) y su contraseña (`CAM_PASS=`), guarda y vuelve a correr
   `./scripts/levantar.sh`.
 - Al terminar muestra la dirección del broker (`IP:1883`) que se configura en las cámaras.
@@ -85,6 +87,19 @@ cd interfazNE30X
 ```
 
 ---
+
+## Buscar las cámaras en la red
+Las cámaras toman IP por DHCP, así que cambia en cada red. El buscador recorre la red de la PC y encuentra las
+cámaras CamThink por su MAC (`44:9f:da` o `04:ec:a9`): muestra IP, web y RTSP de cada una. Esas IPs van en
+`CAMARAS=` del `.env`.
+
+| | Comando |
+|---|---|
+| Windows | `.\scripts\buscar_camaras.ps1` (con varias redes: `.\scripts\buscar_camaras.ps1 -Interfaz "Wi-Fi"`) |
+| Mac | `./scripts/buscar_camaras.sh` (por cable u otra interfaz: `./scripts/buscar_camaras.sh en1`) |
+
+Si no aparece ninguna: la cámara debe estar prendida y en la misma red. Una cámara nueva o sin WiFi configurado
+tiene su propia red (`NE30x_XXXXXX`): conéctate a ella y entra a http://192.168.10.10.
 
 ## Apuntar las cámaras al broker
 En la web de cada cámara, sección MQTT:
