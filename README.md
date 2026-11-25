@@ -32,25 +32,23 @@ cd interfazNE30X
 ```
 
 ### 3. Levantar
+Doble clic en **`levantar.bat`** (en la carpeta `interfazNE30X`), o desde la terminal:
 ```powershell
-.\scripts\levantar.ps1
+.\levantar.bat
 ```
+(en PowerShell lleva `.\` adelante; en CMD basta `levantar.bat`)
+> No abras los `.ps1` con doble clic ni los corras desde CMD: Windows los abre como texto en el Bloc de notas.
+> Los `.bat` llaman a PowerShell por ti y no necesitan cambiar la política de scripts.
 - La primera vez crea el archivo `.env` y se detiene. Para saber las IPs de las cámaras corre
-  `.\scripts\buscar_camaras.ps1` (ver [Buscar las cámaras](#buscar-las-cámaras-en-la-red)). Abre el `.env` (`notepad .env`), pon las IPs de las cámaras
+  `buscar_camaras.bat` (ver [Buscar las cámaras](#buscar-las-cámaras-en-la-red)). Abre el `.env` (`notepad .env`), pon las IPs de las cámaras
   (`CAMARAS=192.168.x.x,192.168.x.y`) y su contraseña (`CAM_PASS=`), guarda y vuelve a correr
-  `.\scripts\levantar.ps1`.
+  `.\levantar.bat`.
 - Al terminar muestra la dirección del broker (`IP:1883`) que se configura en las cámaras.
-- Si PowerShell dice que no se pueden ejecutar scripts, corre una vez:
-  ```powershell
-  Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-  ```
 - Si el **Firewall de Windows** pregunta, permite Docker en redes **privadas** (puertos 8095 y 1883); si no,
   las cámaras no llegan al broker.
 
 ### 4. Actualizar
-```powershell
-.\scripts\actualizar.ps1
-```
+Doble clic en **`actualizar.bat`**, o desde la terminal: `.\actualizar.bat`
 
 ---
 
@@ -95,7 +93,7 @@ cámaras CamThink por su MAC (`44:9f:da` o `04:ec:a9`): muestra IP, web y RTSP d
 
 | | Comando |
 |---|---|
-| Windows | `.\scripts\buscar_camaras.ps1` (con varias redes: `.\scripts\buscar_camaras.ps1 -Interfaz "Wi-Fi"`) |
+| Windows | doble clic en `buscar_camaras.bat` (con varias redes: `.\buscar_camaras.bat -Interfaz "Wi-Fi"`) |
 | Mac | `./scripts/buscar_camaras.sh` (por cable u otra interfaz: `./scripts/buscar_camaras.sh en1`) |
 
 Si no aparece ninguna: la cámara debe estar prendida y en la misma red. Una cámara nueva o sin WiFi configurado
