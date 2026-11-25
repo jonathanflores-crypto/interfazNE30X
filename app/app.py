@@ -42,6 +42,35 @@ CAMARAS = cargar_camaras()
 _hilos = {}   # ip -> turno del hilo que la lee; al quitarla (o volver a agregarla) el hilo viejo se sale solo
 AUTH = (os.environ.get("CAM_USER", "admin"), os.environ.get("CAM_PASS", ""))
 POLL_S = float(os.environ.get("POLL_S", "3"))
+
+
+class ErrorCamara(Exception):
+    pass
+
+
+def datos(r):
+    """El "data" de una respuesta de la cámara, o un error que dice qué pasó (no un KeyError)."""
+    if r.status_code == 401:
+        raise ErrorCamara("contraseña incorrecta (401): revisa CAM_PASS en el .env y corre actualizar")
+    try:
+        j = r.json()
+    except ValueError:
+        raise ErrorCamara(f"respuesta no válida (HTTP {r.status_code})")
+    if not isinstance(j, dict) or "data" not in j:
+        msg = j.get("message", "") if isinstance(j, dict) else ""
+        raise ErrorCamara(f"respondió sin datos (HTTP {r.status_code}{', ' + msg if msg else ''}); se reintenta")
+    return j["data"]
+
+
+def motivo(e):
+    """Explicación corta de un error al hablar con una cámara."""
+    if isinstance(e, ErrorCamara):
+        return str(e)
+    if isinstance(e, requests.exceptions.ConnectTimeout) or isinstance(e, requests.exceptions.ConnectionError):
+        return "no responde en la red: ¿está prendida y en la misma red que esta PC?"
+    if isinstance(e, requests.exceptions.ReadTimeout):
+        return "tardó demasiado en responder: ¿está en la misma red que esta PC? (si sí, puede estar ocupada; se reintenta)"
+    return e.__class__.__name__
 MQTT_HOST = os.environ.get("MQTT_HOST", "localhost")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
 MQTT_CLIENT_ID = os.environ.get("MQTT_CLIENT_ID", "novus-monitor-ne301")   # distinto por contenedor: con el mismo id Mosquitto los tumba entre sí
@@ -159,9 +188,9 @@ def hilo_mqtt():
 # ---------------- Lectura ligera ----------------
 def leer_versiones(ip, info):
     """Versiones de firmware, modelo cargado y hardware (cada 5 min: cambian solo al actualizar la cámara)."""
-    v = requests.get(f"http://{ip}/api/v1/device/firmware-versions", auth=AUTH, timeout=8).json()["data"]
-    d = requests.get(f"http://{ip}/api/v1/device/info", auth=AUTH, timeout=8).json()["data"]
-    m = (requests.get(f"http://{ip}/api/v1/ai/status", auth=AUTH, timeout=8).json()["data"] or {}).get("model") or {}
+    v = datos(requests.get(f"http://{ip}/api/v1/device/firmware-versions", auth=AUTH, timeout=8))
+    d = datos(requests.get(f"http://{ip}/api/v1/device/info", auth=AUTH, timeout=8))
+    m = (datos(requests.get(f"http://{ip}/api/v1/ai/status", auth=AUTH, timeout=8)) or {}).get("model") or {}
     info["versiones"] = dict(
         app=v.get("app"), web=v.get("web"), modelo=v.get("model"), fsbl=v.get("fsbl"), wifi=v.get("wifi_running") or v.get("wifi"),
         wakecore=v.get("wakecore"), detector=m.get("name"), detector_version=m.get("version"),
@@ -224,7 +253,7 @@ def hilo_camara(ip, turno):
             continue
         try:
             r = requests.get(f"http://{ip}/api/v1/faces/debug", auth=AUTH, timeout=5)
-            crops = r.json()["data"]["crops"]
+            crops = datos(r)["crops"]
             ahora = time.time()
             if crops and revisar_arranque:
                 revisar_arranque = False
@@ -251,7 +280,7 @@ def hilo_camara(ip, turno):
             info.update(ok=True, error="", visto=ahora)
             if ahora - ultima_salud >= 30:
                 ultima_salud = ahora
-                s = requests.get(f"http://{ip}/api/v1/faces", auth=AUTH, timeout=8).json()["data"]
+                s = datos(requests.get(f"http://{ip}/api/v1/faces", auth=AUTH, timeout=8))
                 pf = s.get("performance", {})
                 info["faces"] = {k: s.get(k) for k in ("threshold", "margin", "confirm", "period_ms", "match", "norm",
                                                        "fotos", "active_count", "quality", "fotos_status", "testigos")}
@@ -262,7 +291,7 @@ def hilo_camara(ip, turno):
                     try:
                         ciclo_testigos(ip, s)
                     except Exception as e:  # noqa: BLE001  (se reintenta en 30 s)
-                        info["testigos_error"] = e.__class__.__name__
+                        info["testigos_error"] = motivo(e)
                 with _lock, db() as con:
                     con.execute("INSERT INTO salud (ts, camara, fuente, ai_fps, detect_ms, embedding_ms, norm_ms, raw) "
                                 "VALUES (?,?,?,?,?,?,?,?)", (ahora, ip, "api", pf.get("ai_fps"), pf.get("detect_ms"),
@@ -270,7 +299,7 @@ def hilo_camara(ip, turno):
                 if ahora - info.get("versiones_ts", 0) >= 300:
                     leer_versiones(ip, info)
         except Exception as e:  # noqa: BLE001
-            info.update(ok=False, error=e.__class__.__name__)
+            info.update(ok=False, error=motivo(e))
         time.sleep(POLL_S)
 
 
@@ -397,10 +426,10 @@ def api_camaras():
         if not re.fullmatch(r"\d{1,3}(\.\d{1,3}){3}", ip):
             return jsonify(error="IP no válida"), 400
         try:
-            v = requests.get(f"http://{ip}/api/v1/device/firmware-versions", auth=AUTH, timeout=6).json()["data"]
-            d = requests.get(f"http://{ip}/api/v1/device/info", auth=AUTH, timeout=6).json()["data"]
+            v = datos(requests.get(f"http://{ip}/api/v1/device/firmware-versions", auth=AUTH, timeout=6))
+            d = datos(requests.get(f"http://{ip}/api/v1/device/info", auth=AUTH, timeout=6))
         except Exception as e:  # noqa: BLE001
-            return jsonify(error=f"la cámara {ip} no contesta ({e.__class__.__name__}); revisa la IP, la red o la contraseña"), 400
+            return jsonify(error=f"la cámara {ip}: {motivo(e)}"), 400
         if ip not in CAMARAS:
             CAMARAS.append(ip)
             guardar_camaras()
@@ -425,14 +454,14 @@ YUNET_MIN = 20   # en la NE302, bajar YuNet a 10 dejó de detectar del todo
 
 
 def leer_config(ip):
-    d = requests.get(f"http://{ip}/api/v1/faces", auth=AUTH, timeout=10).json()["data"]
+    d = datos(requests.get(f"http://{ip}/api/v1/faces", auth=AUTH, timeout=10))
     out = {}
     for campo, ruta in CONFIG_CAMPOS.items():
         v = d
         for k in ruta:
             v = v.get(k) if isinstance(v, dict) else None
         out[campo] = round(v, 3) if isinstance(v, float) else v
-    ai = requests.get(f"http://{ip}/api/v1/ai/params", auth=AUTH, timeout=10).json()["data"]
+    ai = datos(requests.get(f"http://{ip}/api/v1/ai/params", auth=AUTH, timeout=10))
     out["yunet_confidence"] = ai.get("confidence_threshold")
     return out
 
@@ -452,7 +481,7 @@ def api_config():
         try:
             return jsonify(config=leer_config(ip))
         except Exception as e:  # noqa: BLE001
-            return jsonify(error=f"la cámara no contesta ({e.__class__.__name__})"), 502
+            return jsonify(error=f"la cámara: {motivo(e)}"), 502
     b = request.json or {}
     ip, cambios = b.get("ip", ""), dict(b.get("cambios") or {})
     if ip not in CAMARAS:
@@ -476,13 +505,13 @@ def api_config():
                 return jsonify(error=str(r.get("message"))), 400
         return jsonify(ok=True, config=leer_config(ip))   # lo que quedó guardado en la cámara
     except Exception as e:  # noqa: BLE001
-        return jsonify(error=f"la cámara no contesta ({e.__class__.__name__})"), 502
+        return jsonify(error=f"la cámara: {motivo(e)}"), 502
 
 
 # ---------------- Registrar y borrar personas sin abrir la web de la cámara ----------------
 def refrescar_personas(ip, d=None):
     """Vuelve a leer la lista de personas al momento (si no, la galería tarda hasta 30 s en enterarse)."""
-    d = d or requests.get(f"http://{ip}/api/v1/faces", auth=AUTH, timeout=10).json()["data"]
+    d = d or datos(requests.get(f"http://{ip}/api/v1/faces", auth=AUTH, timeout=10))
     info = estado["camaras"].setdefault(ip, {"ok": False, "error": "", "visto": 0})
     info["people"] = d.get("people", [])
     threading.Thread(target=sincronizar_galeria, args=(ip, info["people"]), daemon=True).start()
@@ -497,9 +526,9 @@ def api_registro():
         if ip not in CAMARAS:
             return jsonify(error="elige una cámara"), 400
         try:
-            d = requests.get(f"http://{ip}/api/v1/faces", auth=AUTH, timeout=10).json()["data"]
+            d = datos(requests.get(f"http://{ip}/api/v1/faces", auth=AUTH, timeout=10))
         except Exception as e:  # noqa: BLE001
-            return jsonify(error=f"la cámara no contesta ({e.__class__.__name__})"), 502
+            return jsonify(error=f"la cámara: {motivo(e)}"), 502
         enr = d.get("enrollment", {})
         if enr.get("active"):
             estado["pausa_hasta"] = time.time() + 5     # mientras registra, el monitor no le carga la cámara
@@ -526,7 +555,7 @@ def api_registro():
             return jsonify(error=str(r.get("message"))), 400
         return jsonify(ok=True)
     except Exception as e:  # noqa: BLE001
-        return jsonify(error=f"la cámara no contesta ({e.__class__.__name__})"), 502
+        return jsonify(error=f"la cámara: {motivo(e)}"), 502
 
 
 @app.route("/api/registro/guia")
@@ -558,7 +587,7 @@ def api_borrar():
         refrescar_personas(ip)
         return jsonify(ok=True)
     except Exception as e:  # noqa: BLE001
-        return jsonify(error=f"la cámara no contesta ({e.__class__.__name__})"), 502
+        return jsonify(error=f"la cámara: {motivo(e)}"), 502
 
 
 # ---------------- Web ----------------
