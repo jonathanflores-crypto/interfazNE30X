@@ -1,5 +1,5 @@
 # Interfaz NE30X (Novus Monitor + broker MQTT). Igual en Windows y Mac (Docker Desktop).
-# Levantar: scripts/levantar.sh (Mac) o scripts\levantar.ps1 (Windows). Ver LEEME.md.
+# Levantar: scripts/levantar.sh (Mac) o scripts\levantar.ps1 (Windows). Ver README.md.
 services:
   mqtt:
     image: eclipse-mosquitto:2

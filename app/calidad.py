@@ -28,7 +28,7 @@ MODELO = os.path.join(os.path.dirname(__file__), "modelos", "mfn_peleab_int8.onn
 
 def instalar(app, db, estado, auth, camaras, datos_dir):
     if not os.path.exists(MODELO):
-        # El modelo no va en el repo: copiarlo a app/modelos/ (ver LEEME). Sin él, todo lo demás funciona.
+        # El modelo no va en el repo: copiarlo a app/modelos/ (ver README). Sin él, todo lo demás funciona.
         print("calidad del registro desactivada: falta", MODELO)
         return None
     cache_dir = os.path.join(datos_dir, "calidad")
