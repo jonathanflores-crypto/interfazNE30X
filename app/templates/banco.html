@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Banco sintético · Novus Monitor</title>
+<style>
+  html, body { margin:0; height:100%; background:#808080; overflow:hidden; font-family:-apple-system, system-ui, sans-serif; }
+  #cara { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); display:none; }
+  #panel { position:absolute; top:10px; left:10px; width:430px; max-height:92vh; overflow:auto; background:rgba(255,255,255,.96);
+           border-radius:8px; padding:10px 12px; font-size:13px; box-shadow:0 2px 10px rgba(0,0,0,.25); }
+  #panel h1 { font-size:15px; margin:0 0 6px; }
+  #panel label { display:inline-block; margin:3px 8px 3px 0; }
+  #panel input, #panel select, #panel button { font:inherit; padding:3px 6px; }
+  #panel button { margin:3px 4px 3px 0; }
+  #log { font-family:ui-monospace, monospace; font-size:11px; white-space:pre-wrap; background:#f3f4f6; padding:6px;
+         border-radius:4px; max-height:240px; overflow:auto; margin-top:6px; }
+  table { border-collapse:collapse; font-size:12px; margin-top:6px; }
+  td { padding:2px 6px; border-bottom:1px solid #e5e7eb; }
+  .nota { color:#6b7280; font-size:12px; }
+  #estado { position:absolute; bottom:8px; right:12px; color:#fff; font-size:13px; text-shadow:0 1px 2px #000; }
+</style>
+</head>
+<body>
+<img id="cara" alt="">
+<div id="estado"></div>
+<div id="panel">
+  <h1>Banco sintético (LFW)</h1>
+  <div class="nota">Pon la pantalla frente a la cámara, a pantalla completa (Cmd+Ctrl+F), brillo alto. <b>H</b> oculta/muestra este panel, <b>Esc</b> detiene. Cierra la web de la cámara.</div>
+  <div>
+    <label>Cámara <select id="ip">{% for c in camaras %}<option>{{ c }}</option>{% endfor %}</select></label>
+    <a href="/" target="_blank" title="Las cámaras se agregan o quitan en la página principal del monitor">cambiar cámaras</a>
+    <label>Registradas <input id="n" type="number" value="200" min="1" max="250" style="width:55px"></label>
+    <label>No registradas <input id="m" type="number" value="100" min="0" max="500" style="width:55px"></label>
+    <label title="fotos distintas de LFW por persona al registrar; se prueba con otra que no se registró">Fotos por persona
+      <input id="fr" type="number" value="3" min="1" max="3" style="width:40px"></label>
+  </div>
+  <div>
+    <label title="Quieto = registro estático (regla del 19-nov): la foto se queda fija al tamaño de la distancia elegida">Registro
+      <select id="modoReg"><option value="quieto" selected>Quieto (estático)</option><option value="caminando">Caminando (viejo)</option></select></label>
+    <label>a <input id="dreg" type="number" value="2.5" step="0.25" style="width:50px"> m</label>
+  </div>
+  <div>
+    <label>Caminata: de <input id="d0" type="number" value="2.0" step="0.25" style="width:55px"> m a
+      <input id="d1" type="number" value="1.0" step="0.25" style="width:50px"> m en
+      <input id="t" type="number" value="3" step="0.5" style="width:45px"> s</label>
+  </div>
+  <div>
+    <button onclick="calibrar()">1 · Calibrar</button>
+    <button onclick="registrar()">2 · Registrar</button>
+    <label>Corrida <input id="corrida" value="" placeholder="p. ej. 944-B-18px" style="width:140px"></label>
+    <button onclick="probar()">3 · Probar</button>
+    <button onclick="resultados()">Resultados</button>
+    <button onclick="todo()" style="font-weight:600">▶ Todo</button>
+    <button onclick="retomar()" title="Sigue la última corrida donde se quedó">⏯ Retomar</button>
+    <button onclick="limpiar()">Borrar personas del banco</button>
+  </div>
+  <div>
+    <label title="Una corrida por línea: nombre, de (m), a (m), en (s). Corre una tras otra sin parar.">Cola de corridas (nombre, de m, a m, en s)<br>
+      <textarea id="cola" rows="5" cols="52" style="font:12px monospace">964-q3f-desde5m, 5.0, 1.0, 3.3
+964-q3f-desde2m, 2.0, 1.0, 3
+964-q3f-estatico2m, 2.0, 2.0, 3
+964-q3f-5m-lento, 5.0, 1.0, 6
+964-q3f-5m-rapido, 5.0, 1.0, 2.5</textarea></label>
+    <button onclick="correrCola()" style="font-weight:600">▶▶ Correr la cola</button>
+    <button onclick="registrarYCola()" style="font-weight:600" title="Registra a los que falten (3 fotos, cada una su registro) y en seguida corre la cola">2 + ▶▶ Registrar y correr la cola</button>
+  </div>
+  <div class="nota" id="calib">Sin calibrar: 1 m = 60 px entre ojos (medido con persona real el 18-nov).</div>
+  <script>document.addEventListener('DOMContentLoaded', () => { if (localStorage.getItem('banco_k')) document.getElementById('calib').textContent = 'Calibración guardada (k = ' + (+localStorage.getItem('banco_k')).toFixed(4) + '). Vuelve a calibrar si moviste la pantalla o la cámara.'; });</script>
+  <div id="res"></div>
+  <div id="log"></div>
+</div>
+<script>
+let plan = null, alto = false;
+let k = parseFloat(localStorage.getItem('banco_k')) || null;   // calibración guardada (sobrevive a recargar)   // k = px entre ojos en la cámara por px de alto de la imagen
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const log = t => { $('log').textContent = new Date().toLocaleTimeString('es-MX') + ' ' + t + '\n' + $('log').textContent; };
+const aviso = t => { $('estado').textContent = t; log(t); };
+const ip = () => $('ip').value;
+async function cam(accion, extra = {}) {
+  for (let i = 0; i < 4; i++) {            // si la cámara tarda, se reintenta en lugar de detenerse
+    try {
+      const r = await fetch('/api/banco/camara', {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ip: ip(), accion, ...extra})});
+      const j = await r.json();
+      if (!j.error) return j;
+      log(`cámara ocupada (${accion}): reintento`);
+    } catch (e) { log(`sin respuesta (${accion}): reintento`); }
+    await sleep(1500);
+  }
+  return {error: 'sin respuesta'};
+}
+async function cargarPlan() {
+  plan = await (await fetch(`/api/banco/plan?n=${$('n').value}&m=${$('m').value}&k=${$('fr').value}`)).json();
+  log(`plan: ${plan.registrados.length} registradas + ${plan.impostores.length} no registradas (LFW ${plan.lfw_personas} personas)`);
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'h' || e.key === 'H') $('panel').style.display = $('panel').style.display === 'none' ? '' : 'none';
+  if (e.key === 'Escape') { alto = true; log('detenido'); }
+});
+const img = $('cara');
+function mostrar(src, h) { img.src = src; img.style.height = h + 'px'; img.style.display = 'block'; }
+function ocultar() { img.style.display = 'none'; }
+const PX_1M = 60;
+const altoPara = d => (PX_1M / d) / k;           // alto en pantalla para que la cámara vea la cara a d metros
+async function precargar(src) { const i = new Image(); i.src = src; await i.decode().catch(() => {}); }
+
+// Camina de d0 a d1 metros en T s (px = 60 / d, como una persona a velocidad constante)
+async function caminar(src, d0, d1, T, sostener = 300) {
+  await precargar(src);
+  const t0 = performance.now();
+  mostrar(src, altoPara(d0));
+  while (!alto) {
+    const f = Math.min(1, (performance.now() - t0) / (T * 1000));
+    img.style.height = altoPara(d0 + (d1 - d0) * f) + 'px';
+    if (f >= 1) break;
+    await new Promise(r => requestAnimationFrame(r));
+  }
+  await sleep(sostener);
+}
+
+async function calibrar() {
+  alto = false;
+  await cargarPlan();
+  const src = '/lfw/' + plan.registrados[0].foto_registro;
+  await precargar(src);
+  const H = Math.min(window.innerHeight * 0.6, 520);
+  mostrar(src, H);
+  $('panel').style.display = 'none';
+  const t0 = Date.now();
+  let vistos = [];
+  for (let i = 0; i < 16 && vistos.length < 3 && !alto; i++) {
+    await sleep(1000);
+    const r = await cam('ojos');
+    vistos = (r.crops || []).filter(c => c.edad_ms < Date.now() - t0 - 300).map(c => c.ojos);
+  }
+  ocultar(); $('panel').style.display = '';
+  if (!vistos.length) { aviso('⚠ la cámara no vio la cara: acerca la pantalla o sube el brillo'); return false; }
+  vistos.sort((a, b) => a - b);
+  const ojos = vistos[Math.floor(vistos.length / 2)];
+  k = ojos / H;
+  localStorage.setItem('banco_k', k);
+  const h1 = altoPara(1), h375 = altoPara(+$('d0').value);
+  $('calib').textContent = `Calibrado: imagen de ${H.toFixed(0)} px → ${ojos.toFixed(0)} px entre ojos. 1 m = ${h1.toFixed(0)} px de alto, ${$('d0').value} m = ${h375.toFixed(0)} px.`;
+  log($('calib').textContent);
+  if (h1 > window.innerHeight * 2) aviso(`⚠ para 1 m la imagen no cabe (${h1.toFixed(0)} px > pantalla): acerca la cámara a la pantalla`);
+}
+
+async function registrar() {
+  if (!k) { aviso('⚠ primero calibra (botón 1)'); return; }
+  if ($('modoReg').value === 'quieto') return registrarQuieto();
+  alto = false;
+  await cargarPlan();
+  let st = await cam('estado');
+  if (!st.nombres) { log('no pude leer la cámara'); return; }
+  // fotos ya registradas de cada persona (se guarda en el navegador para retomar a la mitad)
+  const claveReg = 'banco_reg_' + ip();
+  const hechas = JSON.parse(localStorage.getItem(claveReg) || '{}');
+  const nFotos = p => p.nombre in st.nombres ? (hechas[p.nombre] ?? (st.plantillas?.[p.nombre] || ['x']).length) : 0;
+  let libres = (st.max || 100) - st.personas;
+  const pendientes = plan.registrados.filter(p => nFotos(p) < p.fotos_registro.length);
+  log(`registrar: ${pendientes.length} personas pendientes (${$('fr').value} fotos c/u), ${libres} lugares libres`);
+  $('panel').style.display = 'none';
+  let i = 0;
+  for (const p of pendientes) {
+    if (alto) break;
+    const nueva = !(p.nombre in st.nombres);
+    if (nueva && libres <= 0) { log('⚠ galería llena'); break; }
+    i++;
+    for (let f = nFotos(p); f < p.fotos_registro.length && !alto; f++) {
+      // 1.ª foto «cerca», 2.ª «lejos» (conserva las de cerca), 3.ª «lejos» con add (conserva todas, parche 0057)
+      $('estado').textContent = `registrando ${i}/${pendientes.length}: ${p.nombre} · foto ${f + 1}/${p.fotos_registro.length}`;
+      await cam('pausa', {segundos: 20});
+      const r = await cam('registrar', {nombre: p.nombre, distancia: f === 0 ? 'cerca' : 'lejos', agregar: f >= 2});
+      if (r.success === false) { log(`✗ ${p.nombre} foto ${f + 1}: ${r.message || r.error}`); break; }
+      img.style.clipPath = 'inset(20%)';   // solo la cara del centro: en LFW suele haber otra cara al fondo y el registro la rechaza
+      await caminar('/lfw/' + p.fotos_registro[f], 3.3, 1.0, 5, 0);
+      let fin = '';
+      for (let j = 0; j < 14 && !alto; j++) {   // sostener a 1 m hasta que termine (máx. ~14 s)
+        await sleep(1000);
+        st = await cam('estado');
+        if (st.enrollment && !st.enrollment.active) { fin = st.enrollment.result; break; }
+      }
+      if (!fin) { await cam('cancelar'); fin = 'cancelado (tardó)'; }
+      ocultar(); img.style.clipPath = '';
+      log(`${fin.startsWith('ok') ? '✓' : '✗'} ${p.nombre} foto ${f + 1}: ${fin}`);
+      await sleep(1500);
+      if (!fin.startsWith('ok')) break;
+      if (f === 0 && nueva) libres--;
+      hechas[p.nombre] = f + 1;
+      localStorage.setItem(claveReg, JSON.stringify(hechas));
+    }
+  }
+  $('estado').textContent = ''; $('panel').style.display = '';
+}
+
+// Registro Quieto (estático), una foto de LFW por registro: la foto 1 crea a la persona y la 2 y la 3 se suman
+// con "add", así cada foto queda como su propia huella (una foto plana no gira la cabeza: alternarlas dentro de un
+// solo registro dejaba casi siempre solo la pose de frente). Cada foto se queda fija al tamaño de `dreg` metros,
+// normal y en espejo cada 1.5 s, hasta que la cámara termina (sin lados termina sola a los 20 s con el frente).
+async function registrarQuieto() {
+  alto = false;
+  await cargarPlan();
+  let st = await cam('estado');
+  if (!st.nombres) { log('no pude leer la cámara'); alto = true; return; }
+  const claveReg = 'banco_regq3_' + ip();   // nombre -> fotos ya registradas
+  const hechas = JSON.parse(localStorage.getItem(claveReg) || '{}');
+  // personas del banco que ya están en la cámara pero no se registraron así (p. ej. caminando o Quieto viejo)
+  const viejas = plan.registrados.filter(p => p.nombre in st.nombres && !hechas[p.nombre]).length;
+  if (viejas) { aviso(`⚠ hay ${viejas} personas del banco registradas con el método anterior: usa «Borrar personas del banco» y vuelve a registrar`); alto = true; return; }
+  let libres = (st.max || 100) - st.personas;
+  const pendientes = plan.registrados.filter(p => (hechas[p.nombre] || 0) < p.fotos_registro.length);
+  const d = +$('dreg').value || 2;
+  const H = altoPara(d);
+  log(`registrar Quieto a ${d} m, ${$('fr').value} fotos por persona, cada una su propio registro (${H.toFixed(0)} px de alto ≈ ${(PX_1M / d).toFixed(0)} px entre ojos): ${pendientes.length} pendientes, ${libres} lugares libres`);
+  $('panel').style.display = 'none';
+  let i = 0, ok = 0, fotosOk = 0, poses = [0, 0, 0];
+  for (const p of pendientes) {
+    if (alto) break;
+    i++;
+    for (let f = hechas[p.nombre] || 0; f < p.fotos_registro.length && !alto; f++) {
+      const nueva = !(p.nombre in st.nombres);   // si la foto 1 falló, la siguiente que salga bien crea a la persona
+      if (nueva && libres <= 0) { log('⚠ galería llena'); alto = true; break; }
+      $('estado').textContent = `Quieto ${i}/${pendientes.length}: ${p.nombre} · foto ${f + 1}/${p.fotos_registro.length}`;
+      const foto = '/lfw/' + p.fotos_registro[f];
+      await precargar(foto);
+      await cam('pausa', {segundos: 25});
+      let r = await cam('registrar', {nombre: p.nombre, modo: 'quieto', agregar: !nueva, foto: f + 1});
+      if (r.success === false || r.error) {   // la cámara aún guardaba el registro anterior: un reintento
+        await sleep(3000);
+        r = await cam('registrar', {nombre: p.nombre, modo: 'quieto', agregar: !nueva, foto: f + 1});
+      }
+      if (r.success === false || r.error) { log(`✗ ${p.nombre} foto ${f + 1}: ${r.message || r.error}`); await sleep(1500); continue; }
+      img.style.clipPath = 'inset(20%)';   // solo la cara del centro (en LFW suele haber otra cara al fondo)
+      let fin = '', e = {}, n = 0;
+      const t0 = Date.now();
+      while (!alto && Date.now() - t0 < 24000) {
+        mostrar(foto, H);
+        img.style.transform = 'translate(-50%,-50%)' + (n % 2 ? ' scaleX(-1)' : '');
+        n++;
+        await sleep(1500);
+        st = await cam('estado');
+        e = st.enrollment || {};
+        if (!e.active) { fin = e.result || ''; break; }
+      }
+      if (!fin) { await cam('cancelar'); fin = 'cancelado (tardó)'; }
+      ocultar(); img.style.clipPath = ''; img.style.transform = '';
+      const m = (v, t) => (v ? '✅' : '·') + t;
+      log(`${fin.startsWith('ok') ? '✓' : '✗'} ${p.nombre} foto ${f + 1}: ${fin} · ${m(e.pose_front, 'frente')} ${m(e.pose_side_a, 'lado')} ${m(e.pose_side_b, 'otro lado')}`);
+      if (fin.startsWith('ok')) {
+        fotosOk++;
+        if (nueva) { ok++; libres--; }
+        [e.pose_front, e.pose_side_a, e.pose_side_b].forEach((v, j) => { if (v) poses[j]++; });
+      }
+      hechas[p.nombre] = f + 1;   // una foto que falló se salta (no se reintenta en un ciclo)
+      localStorage.setItem(claveReg, JSON.stringify(hechas));
+      st = await cam('estado');
+      await sleep(1500);
+    }
+  }
+  log(`Quieto 3 fotos: ${ok} personas nuevas, ${fotosOk} fotos registradas · poses: frente ${poses[0]}, un lado ${poses[1]}, el otro lado ${poses[2]}`);
+  $('estado').textContent = ''; $('panel').style.display = '';
+}
+
+function barajar(a, semilla) {   // orden fijo para la misma corrida
+  let s = semilla;
+  const rnd = () => { s = (s * 1103515245 + 12345) % 2147483648; return s / 2147483648; };
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+
+async function probar() {
+  if (!k) { aviso('⚠ primero calibra (botón 1)'); return; }
+  const corrida = $('corrida').value.trim();
+  if (!corrida) { aviso('⚠ pon un nombre de corrida'); return; }
+  alto = false;
+  await cargarPlan();
+  const st = await cam('estado');
+  const lista = barajar([
+    ...plan.registrados.filter(p => p.nombre in st.nombres).map(p => ({verdad: p.nombre, lfw: p.lfw, foto: p.foto_prueba})),
+    ...plan.impostores.map(p => ({verdad: 'nadie', lfw: p.lfw, foto: p.foto_prueba})),
+  ], 2026);
+  // si la corrida ya tiene pasadas terminadas (se cortó), sigue donde se quedó
+  const h = await (await fetch('/api/banco/hechas?corrida=' + encodeURIComponent(corrida))).json();
+  const hechas = new Set(h.hechas.map(x => x.verdad + '|' + x.lfw));
+  const faltan = lista.filter(p => !hechas.has(p.verdad + '|' + p.lfw));
+  if (h.hechas.length) log(`corrida ${corrida}: ${h.hechas.length} de ${lista.length} hechas` +
+                           (h.a_medias ? ` (${h.a_medias} a medias, se repiten)` : '') + `, faltan ${faltan.length}`);
+  else log(`corrida ${corrida}: ${lista.length} pasadas`);
+  $('panel').style.display = 'none';
+  const d0 = +$('d0').value, d1 = +$('d1').value, T = +$('t').value;
+  let i = lista.length - faltan.length, ciegas = 0;
+  const pasada = b => fetch('/api/banco/pasada', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                                   body: JSON.stringify(b)}).then(r => r.json());
+  for (const p of faltan) {
+    if (alto) break;
+    i++;
+    for (let intento = 1; intento <= 3 && !alto; intento++) {   // si la cámara no vio la cara, se repite (hasta 2 veces)
+      $('estado').textContent = `${corrida} · pasada ${i}/${lista.length}` + (intento > 1 ? ` (repetición ${intento - 1})` : '');
+      const ini = await pasada({fase: 'inicio', corrida, ip: ip(), verdad: p.verdad, lfw: p.lfw});
+      const t0 = Date.now();
+      await caminar('/lfw/' + p.foto, d0, d1, T, 300);
+      ocultar();
+      const r = await cam('ojos');
+      const vio = (r.crops || []).some(c => c.edad_ms < Date.now() - t0);
+      await sleep(1800);            // la cara "sale": la cámara termina su intento y olvida la pista
+      if (vio || intento === 3) {
+        await pasada({fase: 'fin', id: ini.id});
+        ciegas = vio ? 0 : ciegas + 1;
+        if (!vio) log(`⚠ ${p.lfw}: la cámara no vio la cara en 3 intentos (cuenta así)`);
+        break;
+      }
+      await pasada({fase: 'descartar', id: ini.id});
+      log(`la cámara no vio a ${p.lfw}: se repite`);
+      await sleep(3000);
+    }
+    if (ciegas >= 3 && enCola) {   // sin nadie enfrente: se espera y se sigue, no se detiene la cola
+      log('⚠ la cámara no vio la pantalla 3 pasadas seguidas: espero 60 s y sigo');
+      await sleep(60000); ciegas = 0;
+    } else if (ciegas >= 3) { alto = true; aviso('⚠ la cámara no ve la pantalla (3 pasadas seguidas): revisa y dale ⏯ Retomar'); }
+  }
+  $('estado').textContent = ''; $('panel').style.display = '';
+  await sleep(3500);              // el monitor lee la cámara cada pocos segundos
+  resultados(corrida);
+}
+
+// Cola: corre varias corridas seguidas (cada una con su nombre y su caminata), sin intervención
+let enCola = false;
+// Registra (lo que falte) y en seguida corre la cola, sin intervención
+async function registrarYCola() {
+  await registrar();
+  if (alto) { log('■ no se corre la cola: el registro no terminó (ver arriba)'); return; }
+  await sleep(5000);
+  await correrCola();
+}
+
+async function correrCola() {
+  if (!k) { aviso('⚠ primero calibra (botón 1)'); return; }
+  const filas = $('cola').value.split('\n').map(l => l.split(',').map(x => x.trim())).filter(f => f.length === 4 && f[0]);
+  if (!filas.length) { aviso('⚠ la cola está vacía'); return; }
+  enCola = true;
+  log(`▶▶ cola de ${filas.length} corridas: ${filas.map(f => f[0]).join(', ')}`);
+  for (const [i, [nombre, d0, d1, t]] of filas.entries()) {
+    $('corrida').value = nombre; $('d0').value = d0; $('d1').value = d1; $('t').value = t;
+    log(`▶ ${i + 1}/${filas.length}: ${nombre} (de ${d0} a ${d1} m en ${t} s)`);
+    await probar();
+    if (alto) { log('■ cola detenida (Esc)'); break; }
+    await sleep(5000);
+  }
+  enCola = false;
+  log('■ cola terminada');
+  $('estado').textContent = '■ cola terminada';
+}
+
+async function todo() {
+  if (!$('corrida').value.trim()) $('corrida').value = 'corrida-' + new Date().toISOString().slice(5, 16).replace(/[-:T]/g, '');
+  if (!k && (await calibrar()) === false) return;
+  if (!k) return;
+  await registrar();
+  if (alto) return;
+  await probar();
+}
+
+// Retoma la última corrida: revisa que sigan las registradas (registra las que falten) y sigue con las pasadas que faltan
+async function retomar() {
+  const h = await (await fetch('/api/banco/hechas')).json();
+  if (!h.corrida) { aviso('⚠ no hay corrida que retomar'); return; }
+  $('corrida').value = h.corrida;
+  if (!k) { aviso('⚠ primero calibra (botón 1)'); return; }
+  await cargarPlan();
+  const st = await cam('estado');
+  if (!st.nombres) { aviso('⚠ no pude leer la cámara'); return; }
+  const faltanReg = plan.registrados.filter(p => !(p.nombre in st.nombres)).length;
+  log(`retomar ${h.corrida}: ${plan.registrados.length - faltanReg} de ${plan.registrados.length} registradas siguen en la cámara`);
+  if (faltanReg) { await registrar(); if (alto) return; }
+  await probar();
+}
+
+async function resultados(corrida) {
+  const r = await (await fetch('/api/banco/resultados' + (corrida ? `?corrida=${encodeURIComponent(corrida)}` : ''))).json();
+  const s = r.resumen;
+  $('res').innerHTML = `<table>
+    <tr><td>Corrida</td><td><b>${s.corrida}</b> (${s.pasadas} pasadas)</td></tr>
+    <tr><td>Registradas con su nombre</td><td><b>${s.correcto ?? '-'} %</b> de ${s.registrados}</td></tr>
+    <tr><td>Con nombre equivocado</td><td><b>${s.equivocado ?? '-'} %</b></td></tr>
+    <tr><td>Registradas sin nombre</td><td>${s.sin_nombre ?? '-'} %</td></tr>
+    <tr><td>No registradas con nombre (falso positivo)</td><td><b>${s.falso_positivo ?? '-'} %</b> de ${s.impostores}</td></tr>
+    <tr><td>Mejor puntaje de un no registrado</td><td>${s.mejor_score_impostor?.toFixed?.(3) ?? '-'}</td></tr>
+    <tr><td>px entre ojos al nombre (mediana)</td><td>${s.ojos_al_nombre ?? '-'} (≈ ${s.ojos_al_nombre ? (60 / s.ojos_al_nombre).toFixed(1) : '-'} m)</td></tr>
+    <tr><td>Tiempo al nombre (mediana)</td><td>${s.ms_al_nombre ?? '-'} ms</td></tr>
+    <tr><td>Intentos por pasada (mediana)</td><td>${s.intentos_por_pasada ?? '-'}</td></tr></table>`;
+  log(`resultados ${s.corrida}: correcto ${s.correcto} %, equivocado ${s.equivocado} %, falso positivo ${s.falso_positivo} %`);
+}
+
+async function limpiar() {
+  if (!confirm('¿Borrar de la cámara todas las personas L###_ del banco? (las personas reales no se tocan)')) return;
+  const r = await cam('borrar_banco');
+  log(`borradas ${r.borradas ?? 0} personas del banco ${r.error || ''}`);
+  if (!r.error) { localStorage.removeItem('banco_reg_' + ip()); localStorage.removeItem('banco_regq_' + ip()); localStorage.removeItem('banco_regq3_' + ip()); }   // ya no hay fotos registradas que retomar
+}
+</script>
+</body>
+</html>

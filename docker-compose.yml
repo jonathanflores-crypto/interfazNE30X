@@ -1,0 +1,27 @@
+# Interfaz NE30X (Novus Monitor + broker MQTT). Igual en Windows y Mac (Docker Desktop).
+# Levantar: scripts/levantar.sh (Mac) o scripts\levantar.ps1 (Windows). Ver LEEME.md.
+services:
+  mqtt:
+    image: eclipse-mosquitto:2
+    container_name: interfaz-mqtt
+    restart: unless-stopped
+    ports:
+      - "1883:1883"          # las cámaras publican aquí: IP de esta PC, puerto 1883
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+
+  monitor:
+    build: ./app
+    container_name: interfaz-monitor
+    restart: unless-stopped
+    depends_on:
+      - mqtt
+    ports:
+      - "8095:8000"          # http://localhost:8095
+    env_file: .env
+    environment:
+      MQTT_HOST: mqtt
+      MQTT_PORT: "1883"
+      DB_PATH: /data/monitor.db
+    volumes:
+      - ./data:/data         # base, fotos y testigos: se crea vacía la primera vez, no se sube a git

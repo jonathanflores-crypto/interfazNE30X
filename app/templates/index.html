@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Novus Monitor</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --ok:#1a7f37; --mal:#c62828; --duda:#b26a00; --gris:#6b7280; --borde:#e5e7eb; }
+  body { font-family: -apple-system, system-ui, sans-serif; margin: 0; background:#f7f7f8; color:#111; }
+  header { background:#111827; color:#fff; padding:10px 18px; display:flex; gap:18px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size:17px; margin:0; }
+  header .chip { font-size:12px; background:#374151; padding:3px 8px; border-radius:10px; }
+  main { padding:14px 18px; display:grid; gap:14px; }
+  .tarjetas { display:flex; gap:12px; flex-wrap:wrap; }
+  .tarjeta { background:#fff; border:1px solid var(--borde); border-radius:8px; padding:10px 14px; min-width:150px; }
+  .tarjeta .v { font-size:22px; font-weight:600; font-variant-numeric: tabular-nums; }
+  .tarjeta .l { font-size:12px; color:var(--gris); }
+  .tarjeta.grande { border-color:#1a7f37; } .tarjeta.grande .v { font-size:34px; color:#1a7f37; }
+  pre.meta { font-size:12px; background:#f3f4f6; padding:8px; border-radius:6px; overflow:auto; max-height:320px; }
+  section { background:#fff; border:1px solid var(--borde); border-radius:8px; padding:10px 14px; }
+  h2 { font-size:14px; margin:4px 0 8px; }
+  table { border-collapse:collapse; width:100%; font-size:13px; font-variant-numeric: tabular-nums; }
+  th, td { text-align:left; padding:4px 6px; border-bottom:1px solid var(--borde); }
+  th { color:var(--gris); font-weight:500; }
+  .reconocido { color:var(--ok); font-weight:600; } .desconocido { color:var(--mal); } .buscando { color:var(--duda); }
+  img.cara { width:56px; height:56px; image-rendering:pixelated; border-radius:4px; cursor:pointer; background:#eee; }
+  .barra { display:flex; gap:8px; align-items:center; flex-wrap:wrap; font-size:13px; }
+  input, button { font:inherit; padding:4px 8px; }
+  .nota { font-size:12px; color:var(--gris); }
+  .galeria { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:10px; }
+  .persona { border:1px solid var(--borde); border-radius:8px; padding:8px; font-size:12px; }
+  .persona.inactiva { opacity:.45; }
+  .persona .nom { font-weight:600; font-size:13px; }
+  .persona .fotos { display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; }
+  .persona .foto { text-align:center; }
+  .persona .foto img { width:64px; height:64px; border-radius:4px; display:block; }
+  .persona .foto.mala img { outline:3px solid var(--mal); }
+  .persona .foto span { font-variant-numeric: tabular-nums; color:var(--gris); }
+  nav.pestanas { display:flex; gap:4px; padding:10px 18px 0; border-bottom:1px solid var(--borde); background:#fff; }
+  nav.pestanas button { border:1px solid var(--borde); border-bottom:none; background:#f3f4f6; border-radius:8px 8px 0 0;
+                        padding:6px 16px; cursor:pointer; color:var(--gris); }
+  body[data-pestana=plataforma] nav [data-p=plataforma], body[data-pestana=pruebas] nav [data-p=pruebas] {
+    background:#fff; color:#111; font-weight:600; margin-bottom:-1px; padding-bottom:7px; }
+  body[data-pestana=plataforma] .p-pruebas, body[data-pestana=pruebas] .p-plataforma { display:none; }
+</style>
+</head>
+<body data-pestana="plataforma">
+<header>
+  <h1>Novus Monitor</h1>
+  <span class="chip" id="mqtt">MQTT: …</span>
+  <label class="chip">Ver: <select id="verCamara" onchange="cambiarCamara(this.value)">
+    <option value="">Todas</option>
+    {% for ip in camaras %}<option value="{{ ip }}">{{ ip }}</option>{% endfor %}
+  </select></label>
+  <span class="chip" id="camaras">Cámaras: …</span>
+  <span class="chip">IP <input id="nuevaIp" placeholder="192.168.1.103" size="13" style="font:inherit">
+    <button onclick="agregarCamara()">Agregar cámara</button></span>
+  <span class="chip" id="pruebaActual">Prueba: —</span>
+  <a class="chip" style="color:#fff" href="/banco" target="_blank">Banco sintético (LFW)</a>
+  <a class="chip" style="color:#fff" href="/huellas" target="_blank">Huellas (PCA)</a>
+</header>
+<nav class="pestanas">
+  <button data-p="plataforma" onclick="verPestana('plataforma')">Plataforma</button>
+  <button data-p="pruebas" onclick="verPestana('pruebas'); tick()">Pruebas</button>
+</nav>
+<main>
+  <div class="tarjetas p-plataforma" id="tarjetas"></div>
+
+  <section class="p-plataforma">
+    <h2>Tiempo al reconocimiento <span class="nota">(desde que la cámara ve la cara hasta que la nombra · time_to_identify_ms de cada evento face_recognized · contadores de hoy)</span></h2>
+    <div class="tarjetas" id="rendTarjetas"></div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:8px">
+      <table id="rendRecientes" style="width:auto;min-width:420px"><thead><tr><th>Hora</th><th>Persona</th><th>Puntaje</th>
+        <th>Tiempo al nombre</th></tr></thead><tbody></tbody></table>
+      <details style="flex:1;min-width:320px"><summary>Metadata del último evento MQTT <span class="nota" id="metaTipo"></span></summary>
+        <pre class="meta" id="metaUltimo"></pre></details>
+    </div>
+  </section>
+
+  <section class="p-plataforma">
+    <h2>Versiones <span class="nota">(lo que reporta cada cámara; se lee cada 5 min)</span></h2>
+    <table id="versiones"><thead><tr><th>Cámara</th><th>Nombre</th><th>App</th><th>Web</th><th>Modelo (paquete)</th>
+      <th>Detector cargado</th><th>FSBL</th><th>WiFi</th><th>WakeCore</th><th>Hardware</th><th>Sensor</th><th>Energía</th><th>Leído</th></tr></thead>
+      <tbody></tbody></table>
+  </section>
+
+  <section class="p-plataforma">
+    <h2>Registrar persona <span class="nota">(estático: la persona parada a ~2 m, mirando a la cámara; luego gira un poco la cara a un lado y al otro)</span></h2>
+    <div class="barra">
+      <input id="regNombre" placeholder="Nombre, p. ej. N_16_2m" maxlength="31" size="24">
+      <button onclick="registrar()" style="font-weight:600">Registrar (quieto)</button>
+      <button onclick="cancelarRegistro()">Cancelar</button>
+      <span id="regEstado" class="nota"></span>
+    </div>
+    <div id="guia" style="display:none;margin-top:10px;padding:14px;border:2px solid var(--borde);border-radius:10px">
+      <div id="guiaPasos" style="font-size:18px;margin-bottom:8px"></div>
+      <div id="guiaTexto" style="font-size:40px;font-weight:700;line-height:1.2"></div>
+      <div style="margin-top:12px;font-size:12px;color:var(--gris);display:flex;justify-content:space-between;max-width:520px">
+        <span>⟵ lejos</span><span>distancia</span><span>cerca ⟶</span></div>
+      <div style="position:relative;height:18px;max-width:520px;background:#f3f4f6;border-radius:9px;overflow:hidden">
+        <div id="guiaZona" style="position:absolute;top:0;bottom:0;background:#d1fae5"></div>
+        <div id="guiaMarca" style="position:absolute;top:0;bottom:0;width:6px;border-radius:3px;background:var(--gris)"></div>
+      </div>
+      <div id="guiaDetalle" class="nota" style="margin-top:6px"></div>
+    </div>
+  </section>
+
+  <section class="p-plataforma">
+    <h2>Configuración de la cámara <span class="nota" id="cfgCam"></span></h2>
+    <div class="barra" id="cfg"></div>
+    <div class="barra" style="margin-top:6px">
+      <button onclick="leerConfig()">Leer de la cámara</button>
+      <button onclick="guardarConfig()" style="font-weight:600">Guardar cambios</button>
+      <span class="nota" id="cfgMsg">Solo se manda lo que cambies. No se puede guardar a media corrida del banco.</span>
+    </div>
+  </section>
+
+  <section class="p-plataforma">
+    <h2>Galería: respaldo y testigos <span class="nota">(firmware 964: la cámara guarda solo embeddings; cada foto de registro baja aquí como testigo con su ID)</span></h2>
+    <div class="barra">
+      <button onclick="respaldar()" style="font-weight:600">Respaldar galería</button>
+      <select id="respaldos"></select>
+      <button onclick="restaurar()">Restaurar este respaldo</button>
+      <span class="nota" id="respMsg">Respalda antes de cada firmware nuevo. Restaurar sube los embeddings sin recalcular.</span>
+    </div>
+    <div class="barra" style="margin-top:6px">
+      <b>Testigos:</b> <span id="tgEstado" class="nota">…</span>
+    </div>
+  </section>
+
+  <section class="p-pruebas">
+    <div class="barra">
+      <b>Prueba:</b>
+      <input id="prueba" placeholder="p. ej. B-caminando-N01" size="28">
+      <button onclick="marcar()">Marcar</button>
+      <button onclick="marcar('')">Terminar</button>
+      <a id="exportar" href="/export.csv">Exportar CSV</a>
+      <span class="nota">Cada intento que llegue se etiqueta con el nombre de la prueba.</span>
+    </div>
+  </section>
+
+  <section class="p-pruebas">
+    <h2>Resumen por prueba y persona <span class="nota" id="resumenNota"></span>
+      <button id="resumenTodas" onclick="resumenTodas = !resumenTodas; tick()" style="font-size:12px;padding:1px 8px">Ver todas</button></h2>
+    <table id="resumen"><thead><tr><th>Prueba</th><th>Persona (1.er lugar)</th><th>Intentos</th><th>Con nombre</th>
+      <th>Puntaje máx</th><th>Mediana</th><th>Ventaja sobre el 2.º (mediana)</th></tr></thead><tbody></tbody></table>
+  </section>
+
+  <section class="p-plataforma">
+    <h2>Intentos en vivo <span class="nota">(los 20 más recientes; cada cara que pasó por el modelo; la foto de cada intento se baja al servidor al momento; «perdida» si la cámara la borró antes)</span></h2>
+    <table id="intentos"><thead><tr><th>Hora</th><th>Cámara</th><th>#</th><th>Foto</th><th>Resultado</th><th>1.er lugar</th>
+      <th>Puntaje</th><th>2.º lugar</th><th>Puntaje</th><th>Ventaja</th><th>Huella</th><th>Ojos px</th><th>Det</th><th>Prueba</th></tr></thead><tbody></tbody></table>
+  </section>
+
+  <section class="p-plataforma">
+    <h2>Personas registradas <span class="nota">(fotos de registro bajadas una vez a esta Mac; se actualizan si la persona se registra de nuevo · rojo: contraste &lt; 25 o parecido &lt; 0.70)</span></h2>
+    <div id="galeria" class="galeria"></div>
+  </section>
+
+  <section class="p-plataforma">
+    <h2>Eventos MQTT <span class="nota">(los 15 más recientes)</span></h2>
+    <table id="eventos"><thead><tr><th>Hora</th><th>Cámara</th><th>Tipo</th><th>Persona</th><th>Puntaje</th><th>Tiempo al nombre</th></tr></thead><tbody></tbody></table>
+  </section>
+</main>
+<script>
+const hora = ts => new Date(ts * 1000).toLocaleTimeString('es-MX');
+// Pestañas: «Plataforma» para mostrar, «Pruebas» para trabajar; se recuerda en este navegador
+function verPestana(p) {
+  document.body.dataset.pestana = p;
+  localStorage.setItem('pestana', p);
+}
+verPestana(localStorage.getItem('pestana') === 'pruebas' ? 'pruebas' : 'plataforma');
+let resumenTodas = false;
+const RESUMEN_LIMITE = 20;
+// Cámara elegida arriba ('' = todas); se recuerda en este navegador
+let camara = localStorage.getItem('camara') || '';
+const conCamara = url => camara ? `${url}?camara=${encodeURIComponent(camara)}` : url;
+function cambiarCamara(ip) {
+  camara = ip;
+  localStorage.setItem('camara', ip);
+  document.getElementById('exportar').href = conCamara('/export.csv');
+  galeriaFirma = '';
+  tick(); galeria(); leerConfig(); verRespaldos();
+}
+// Agregar / quitar cámaras (se guardan en data/camaras.json; el monitor empieza a leerla sin reiniciar)
+async function agregarCamara() {
+  const ip = document.getElementById('nuevaIp').value.trim();
+  if (!ip) return;
+  const r = await (await fetch('/api/camaras', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                               body: JSON.stringify({ip, accion: 'agregar'})})).json();
+  if (r.error) { alert(r.error); return; }
+  alert(`Agregada ${ip}: ${r.nombre} · App ${r.app} · Web ${r.web}`);
+  location.reload();
+}
+async function quitarCamara(ip) {
+  if (!confirm(`¿Dejar de leer ${ip}? Su historial se conserva.`)) return;
+  await fetch('/api/camaras', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                               body: JSON.stringify({ip, accion: 'quitar'})});
+  if (camara === ip) localStorage.setItem('camara', '');
+  location.reload();
+}
+// Configuración de la cámara (POST /faces/config y ai/params, desde el monitor)
+const CFG = [
+  ['threshold', 'Threshold', 0.01], ['margin', 'Margen', 0.01], ['confirm', 'Votos', 1], ['period_ms', 'ms entre intentos', 10],
+  ['strong_score', 'Nombre seguro: score', 0.01], ['strong_margin', 'Nombre seguro: margen', 0.01],
+  ['quality_min_eye', 'px ojos reconocer', 1], ['enroll_min_eye', 'px ojos registrar', 1],
+  ['quality_min_conf', 'Conf. mín. cara', 0.01], ['quality_max_yaw', 'Giro máx.', 0.01], ['quality_min_luma', 'Brillo mín.', 1],
+  ['yunet_confidence', 'YuNet confianza (≥ 20)', 1],
+  ['match', 'Match', ['max', 'mean']], ['norm', 'norm', 'bool'], ['fotos', 'fotos', 'bool'], ['show_pictures', 'Mostrar fotos', 'bool'],
+];
+let cfgLeida = null;
+const cfgIp = () => camara || [...document.getElementById('verCamara').options].map(o => o.value).find(v => v) || '';
+function pintarConfig(c) {
+  cfgLeida = c;
+  document.getElementById('cfg').innerHTML = CFG.filter(([k]) => c[k] !== null && c[k] !== undefined).map(([k, l, t]) => {
+    let ctl;
+    if (t === 'bool') ctl = `<input type="checkbox" id="cfg_${k}" ${c[k] ? 'checked' : ''}>`;
+    else if (Array.isArray(t)) ctl = `<select id="cfg_${k}">${t.map(o => `<option ${o === c[k] ? 'selected' : ''}>${o}</option>`).join('')}</select>`;
+    else ctl = `<input type="number" id="cfg_${k}" value="${c[k]}" step="${t}" style="width:80px">`;
+    return `<label style="margin-right:10px">${l} ${ctl}</label>`;
+  }).join('');
+}
+async function leerConfig() {
+  const ip = cfgIp();
+  document.getElementById('cfgCam').textContent = ip ? '· ' + ip : '';
+  if (!ip) { document.getElementById('cfgMsg').textContent = 'Agrega o elige una cámara arriba.'; return; }
+  document.getElementById('cfgMsg').textContent = 'Leyendo…';
+  const r = await (await fetch('/api/config?camara=' + encodeURIComponent(ip))).json();
+  if (r.error) { document.getElementById('cfgMsg').textContent = '⚠ ' + r.error; return; }
+  pintarConfig(r.config);
+  document.getElementById('cfgMsg').textContent = 'Leído ' + new Date().toLocaleTimeString('es-MX');
+}
+async function guardarConfig() {
+  if (!cfgLeida) return leerConfig();
+  const cambios = {};
+  for (const [k, , t] of CFG) {
+    const el = document.getElementById('cfg_' + k);
+    if (!el) continue;
+    const v = t === 'bool' ? el.checked : Array.isArray(t) ? el.value : Number(el.value);
+    if (v !== cfgLeida[k]) cambios[k] = v;
+  }
+  if (!Object.keys(cambios).length) { document.getElementById('cfgMsg').textContent = 'Sin cambios.'; return; }
+  if (!confirm('Guardar en ' + cfgIp() + ':\n' + Object.entries(cambios).map(([k, v]) => `${k}: ${cfgLeida[k]} → ${v}`).join('\n'))) return;
+  const r = await (await fetch('/api/config', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                               body: JSON.stringify({ip: cfgIp(), cambios})})).json();
+  if (r.error) { document.getElementById('cfgMsg').textContent = '⚠ ' + r.error; return; }
+  pintarConfig(r.config);
+  document.getElementById('cfgMsg').textContent = '✓ Guardado y confirmado por la cámara ' + new Date().toLocaleTimeString('es-MX');
+}
+// Respaldo de la galería y testigos (firmware 964)
+const respMsg = t => document.getElementById('respMsg').innerHTML = t;
+async function verRespaldos() {
+  const ip = cfgIp();
+  if (!ip) return;
+  const r = await (await fetch('/api/respaldo?camara=' + encodeURIComponent(ip))).json();
+  document.getElementById('respaldos').innerHTML = r.respaldos.length
+    ? r.respaldos.map(x => `<option value="${x.carpeta}">${x.carpeta} · ${x.personas} personas${x.errores ? ' · ⚠' + x.errores : ''}</option>`).join('')
+    : '<option value="">(sin respaldos)</option>';
+  const t = await (await fetch('/api/testigos?camara=' + encodeURIComponent(ip))).json();
+  const c = t.camaras[ip];
+  document.getElementById('tgEstado').textContent = c
+    ? `${t.testigos.length} bajados a esta máquina · ${c.pending} pendientes en la cámara (máx. ${c.max})${c.dropped ? ' · ⚠ ' + c.dropped + ' perdidos por cola llena' : ''}`
+    : `${t.testigos.length} bajados · la cámara no tiene testigos (firmware anterior a 964)`;
+}
+async function respaldar() {
+  const ip = cfgIp();
+  if (!ip) return;
+  respMsg('Respaldando… (unos segundos por persona)');
+  const r = await post('/api/respaldo', {ip});
+  respMsg(r.ok ? `✓ ${r.personas} personas en ${r.carpeta}${r.errores.length ? ' · ⚠ ' + r.errores.length + ' errores' : ''}`
+               : '⚠ ' + (r.error || (r.errores || []).join(', ') || 'la cámara no tiene /faces/backup (antes de 964)'));
+  verRespaldos();
+}
+async function restaurar() {
+  const ip = cfgIp(), carpeta = document.getElementById('respaldos').value;
+  if (!ip || !carpeta) return;
+  if (!confirm(`¿Subir el respaldo ${carpeta} a ${ip}? Las personas con el mismo nombre se reemplazan.`)) return;
+  respMsg('Restaurando…');
+  const r = await post('/api/restaurar', {ip, carpeta});
+  respMsg(r.ok ? `✓ ${r.personas} personas restauradas` : `⚠ ${r.personas || 0} restauradas · ${(r.errores || [r.error]).join(', ')}`);
+}
+
+// Registro quieto y borrado desde el monitor
+let regTimer = null;
+const regMsg = t => document.getElementById('regEstado').innerHTML = t;
+async function post(url, b) {
+  return (await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(b)})).json();
+}
+async function registrar() {
+  const nombre = document.getElementById('regNombre').value.trim();
+  if (!nombre) { regMsg('⚠ escribe un nombre'); return; }
+  const r = await post('/api/registro', {ip: cfgIp(), nombre});
+  if (r.error) { regMsg('⚠ ' + r.error); return; }
+  regMsg('Registrando… párate a ~2 m mirando a la cámara');
+  regInicio = Date.now() / 1000;
+  clearInterval(regTimer);
+  regTimer = setInterval(verGuia, 300);
+}
+// App 967: la guía llega por MQTT (enroll_guidance) al monitor; aquí solo se lee del monitor
+let regInicio = 0;
+const PISTAS = {
+  acercate: ['Acércate un poco', 'var(--duda)'], alejate: ['Aléjate un poco (párate a ~2 m)', 'var(--duda)'],
+  mira_al_centro: ['Mira de frente a la cámara', 'var(--duda)'],
+  gira_izquierda: ['Gira la cara un poco a TU izquierda', 'var(--duda)'],
+  gira_derecha: ['Gira la cara un poco a TU derecha', 'var(--duda)'],
+  gira_menos: ['Gira menos', 'var(--duda)'], quieto: ['Quédate quieto…', 'var(--ok)'],
+  foto_tomada: ['✓ Foto tomada', 'var(--ok)'], cara_poco_clara: ['Cara poco clara: quieto y de frente a la luz', 'var(--duda)'],
+  falta_luz: ['Falta luz en la cara', 'var(--mal)'], otra_cara: ['Hay otra cara: que salga del cuadro', 'var(--mal)'],
+  sin_cara: ['No veo tu cara', 'var(--gris)'], parecida_a_otro: ['Se parece a otra persona registrada', 'var(--mal)'],
+};
+async function verGuia() {
+  const r = await (await fetch('/api/registro/guia?camara=' + encodeURIComponent(cfgIp()))).json();
+  const caja = document.getElementById('guia');
+  const res = r.resultado;
+  if (res && r.resultado_hace_s !== null && Date.now() / 1000 - r.resultado_hace_s > regInicio) {
+    clearInterval(regTimer);
+    caja.style.display = 'none';
+    regMsg(`<b>${res.ok ? '✅' : '⚠'} ${res.result || 'terminado'}</b>` +
+           (res.skipped && res.skipped.length ? ` · sin: ${res.skipped.join(', ')}` : ''));
+    galeriaFirma = ''; galeria();
+    return;
+  }
+  const g = r.guia;
+  if (!g || r.hace_s > 5 || Date.now() / 1000 - r.hace_s < regInicio) {
+    regMsg('Esperando la guía de la cámara por MQTT…' + (r.hace_s > 5 ? ` (última hace ${Math.round(r.hace_s)} s)` : ''));
+    return;
+  }
+  regMsg(`Registrando a <b>${g.name}</b>`);
+  caja.style.display = '';
+  const paso = p => g.done.includes(p) ? `✅ ${p}` : g.skipped.includes(p) ? `⏭ ${p}` :
+                    g.step === p ? `<b style="color:var(--duda)">▶ ${p}</b>` : `⬜ ${p}`;
+  document.getElementById('guiaPasos').innerHTML = ['centro', 'izquierda', 'derecha'].map(paso).join(' &nbsp;→&nbsp; ') +
+    ` <span class="nota">(${g.step_left_s} s para este paso)</span>`;
+  const [t, c] = PISTAS[g.hint] || [g.hint, 'var(--gris)'];
+  const txt = document.getElementById('guiaTexto');
+  txt.textContent = t; txt.style.color = c; caja.style.borderColor = c;
+  const tope = g.eye_max * 1.5, pct = v => Math.max(0, Math.min(100, v / tope * 100));
+  const zona = document.getElementById('guiaZona'), marca = document.getElementById('guiaMarca');
+  zona.style.left = pct(g.eye_min) + '%'; zona.style.width = (pct(g.eye_max) - pct(g.eye_min)) + '%';
+  marca.style.display = g.eye_px > 0 ? '' : 'none';
+  marca.style.left = `calc(${pct(g.eye_px)}% - 3px)`;
+  marca.style.background = g.eye_px >= g.eye_min && g.eye_px <= g.eye_max ? 'var(--ok)' : 'var(--mal)';
+  document.getElementById('guiaDetalle').textContent =
+    `${g.eye_px} px entre ojos (bien: ${g.eye_min}–${g.eye_max}) · giro ${g.yaw}` +
+    (g.luma !== null ? ` · brillo ${g.luma}` : '') + ` · ${g.elapsed_s} s` +
+    (g.last_rejected ? ` · última rechazada: ${g.last_rejected}` : '');
+}
+async function verRegistro() {
+  const r = await (await fetch('/api/registro?camara=' + encodeURIComponent(cfgIp()))).json();
+  if (r.error) { regMsg('⚠ ' + r.error); return; }
+  const e = r.enrollment || {};
+  const m = (ok, t) => `${ok ? '✅' : '⬜'} ${t}`;
+  if (e.active) {
+    regMsg(`${e.name}: ${m(e.pose_front, 'de frente')} · ${m(e.pose_side_a, 'un lado')} · ${m(e.pose_side_b, 'el otro lado')}` +
+           (e.pose_front ? ' — ahora gira un poco la cara' : ' — mira de frente a la cámara') +
+           (e.rejected ? ` · ${e.rejected} fotos rechazadas${e.last_rejected ? ' (' + e.last_rejected + ')' : ''}` : ''));
+  } else {
+    clearInterval(regTimer);
+    regMsg('<b>' + (e.result || 'terminado') + '</b>');
+    galeriaFirma = ''; galeria();
+  }
+}
+async function cancelarRegistro() {
+  const r = await post('/api/registro', {ip: cfgIp(), accion: 'cancelar'});
+  regMsg(r.error ? '⚠ ' + r.error : 'Cancelado');
+  clearInterval(regTimer);
+  document.getElementById('guia').style.display = 'none';
+}
+async function borrarPersona(ip, id, nombre) {
+  if (!confirm(`¿Borrar a ${nombre} (#${id}) de la cámara ${ip}? Se borran sus fotos y su huella.`)) return;
+  regMsg(`Borrando a ${nombre}… (tarda unos segundos)`);
+  const r = await post('/api/borrar', {ip, id});
+  regMsg(r.error ? '⚠ ' + r.error : `Borrado: ${nombre}`);
+  galeriaFirma = ''; galeria();
+}
+const n = (v, d = 3) => (v === null || v === undefined) ? '' : Number(v).toFixed(d);
+async function marcar(nombre) {
+  const v = nombre === undefined ? document.getElementById('prueba').value : nombre;
+  await fetch('/api/prueba', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({nombre: v})});
+  tick();
+}
+function tarjeta(v, l) { return `<div class="tarjeta"><div class="v">${v}</div><div class="l">${l}</div></div>`; }
+async function tick() {
+  const r = await (await fetch(conCamara('/api/estado'))).json();
+  const e = r.estado;
+  document.getElementById('mqtt').textContent = `MQTT: ${e.mqtt} · ${e.mqtt_msgs} mensajes`;
+  document.getElementById('pruebaActual').textContent = 'Prueba: ' + (e.prueba || '—');
+  const cams = Object.entries(e.camaras);
+  document.getElementById('camaras').innerHTML = 'Cámaras: ' + (cams.map(([ip, c]) =>
+    `${ip}${c.nombre ? ' (' + c.nombre + ' · ' + c.app + ')' : ''} ${c.ok ? '✓' : '✗ ' + c.error}` +
+    ` <a href="#" title="Dejar de leer esta cámara" onclick="quitarCamara('${ip}'); return false">✕</a>`).join(' · ') || 'ninguna');
+  let t = '';
+  for (const [ip, c] of cams.filter(([ip]) => !camara || ip === camara)) {
+    const p = c.performance || {}, f = c.faces || {}, q = f.quality || {};
+    t += tarjeta(n(p.ai_fps, 1), `${ip} · cuadros/s del detector`);
+    t += tarjeta((p.detect_ms ?? '') + ' ms', 'detector por frame');
+    t += tarjeta((p.embedding_ms ?? '') + ' ms', 'modelo por cara (último)');
+    t += tarjeta(((p.detect_ms || 0) + (p.norm_ms || 0) + (p.embedding_ms || 0)) + ' ms', 'latencia por cara (detector + luz + modelo)');
+    t += tarjeta((p.norm_ms ?? '') + ' ms', 'corrección de luz');
+    t += tarjeta(`${n(f.threshold, 2)} / ${n(f.margin, 2)}`, 'umbral / margen');
+    t += tarjeta(`${f.norm ? 'B' : 'A'}${f.fotos ? '+fotos' : ''}`, `config · ${f.active_count ?? ''} activas`);
+    t += tarjeta(q.skipped_small ?? '', 'caras descartadas por chicas');
+  }
+  document.getElementById('tarjetas').innerHTML = t;
+  document.querySelector('#versiones tbody').innerHTML = cams.filter(([ip]) => !camara || ip === camara).map(([ip, c]) => {
+    const v = c.versiones;
+    if (!v) return `<tr><td>${ip}</td><td colspan="12" class="nota">leyendo…</td></tr>`;
+    return `<tr><td>${ip}</td><td>${c.nombre || ''}</td><td><b>${v.app || ''}</b></td><td><b>${v.web || ''}</b></td><td><b>${v.modelo || ''}</b></td>
+      <td>${v.detector || ''}${v.detector_version ? ' · v' + v.detector_version : ''}${v.detector_kb ? ' · ' + v.detector_kb + ' KB' : ''}${v.detector_estado && v.detector_estado !== 'loaded' ? ' · ⚠ ' + v.detector_estado : ''}</td>
+      <td>${v.fsbl || ''}</td><td>${v.wifi || ''}</td><td>${v.wakecore || ''}</td><td>${v.hardware || ''}</td><td>${v.sensor || ''}</td>
+      <td>${v.energia || ''}${v.bateria != null && v.energia === 'battery' ? ' · ' + v.bateria + ' %' : ''}${v.red ? ' · ' + v.red : ''}</td>
+      <td>${c.versiones_ts ? hora(c.versiones_ts) : ''}</td></tr>`;
+  }).join('');
+  document.querySelector('#intentos tbody').innerHTML = r.intentos.slice(0, 20).map(i => `<tr>
+    <td>${hora(i.ts)}</td><td>${i.camara}</td><td>${i.seq}</td>
+    <td>${i.foto === 'perdida' ? '<span class="nota">perdida</span>' : `<a href="/foto/${i.camara}/${i.arranque}/${i.seq}" target="_blank">ver</a>`}</td>
+    <td class="${i.resultado}">${i.resultado}</td><td>${i.persona || ''}</td><td>${n(i.score)}</td>
+    <td>${i.segundo || ''}</td><td>${n(i.score2)}</td><td>${n((i.score || 0) - (i.score2 || 0))}</td>
+    <td>${i.plantilla || ''}</td><td>${n(i.ojos, 0)}</td><td>${n(i.conf, 2)}</td><td>${i.prueba || ''}</td></tr>`).join('');
+  document.querySelector('#eventos tbody').innerHTML = r.eventos.slice(0, 15).map(v => `<tr><td>${hora(v.ts)}</td><td>${v.camara}</td>
+    <td>${v.tipo}</td><td>${v.persona || ''}</td><td>${n(v.score)}</td><td>${v.tiempo_ms ?? ''}${v.tiempo_ms ? ' ms' : ''}</td></tr>`).join('');
+  if (document.body.dataset.pestana === 'plataforma') return rendimiento();
+  // el resumen solo se calcula si se está viendo
+  const url = conCamara('/api/resumen');
+  const res = await (await fetch(url + (url.includes('?') ? '&' : '?') + 'limite=' + (resumenTodas ? 0 : RESUMEN_LIMITE))).json();
+  document.getElementById('resumenNota').textContent = resumenTodas || res.pruebas <= RESUMEN_LIMITE
+    ? `(${res.pruebas} pruebas)` : `(las ${RESUMEN_LIMITE} más recientes de ${res.pruebas})`;
+  document.getElementById('resumenTodas').textContent = resumenTodas ? 'Solo las recientes' : 'Ver todas';
+  document.getElementById('resumenTodas').style.display = res.pruebas > RESUMEN_LIMITE ? '' : 'none';
+  document.querySelector('#resumen tbody').innerHTML = res.filas.map(s => `<tr><td>${s.prueba}</td><td>${s.persona}</td>
+    <td>${s.intentos}</td><td>${s.reconocido}</td><td>${s.score_max}</td><td>${s.score_mediana}</td><td>${s.ventaja_mediana}</td></tr>`).join('');
+}
+// Tiempo al reconocimiento y metadata (solo en la pestaña Plataforma)
+const ms = v => v == null ? '—' : (v >= 1000 ? (v / 1000).toFixed(2) + ' s' : v + ' ms');
+async function rendimiento() {
+  const r = await (await fetch(conCamara('/api/rendimiento'))).json();
+  const h = r.hoy, t = h.tiempo;
+  document.getElementById('rendTarjetas').innerHTML =
+    `<div class="tarjeta grande"><div class="v">${ms(t.ultimo)}</div><div class="l">último reconocimiento</div></div>` +
+    tarjeta(ms(t.mediana), `mediana de hoy (${t.n})`) + tarjeta(ms(t.p90), '90 % de las veces, menos de') +
+    tarjeta(`${ms(t.minimo)} – ${ms(t.maximo)}`, 'más rápido – más lento hoy') + tarjeta(ms(t.promedio), 'promedio de hoy') +
+    tarjeta(h.reconocidos, 'reconocidos hoy') + tarjeta(h.desconocidos, 'desconocidos hoy');
+  document.querySelector('#rendRecientes tbody').innerHTML = r.recientes.map(e => `<tr><td>${hora(e.ts)}</td>
+    <td class="reconocido">${e.persona || ''}</td><td>${n(e.score)}</td><td><b>${ms(e.tiempo_ms)}</b></td></tr>`).join('')
+    || '<tr><td colspan="4" class="nota">sin reconocimientos todavía</td></tr>';
+  document.getElementById('metaTipo').textContent = r.ultimo ? `· ${r.ultimo.type} · ${r.ultimo.time_local || ''}` : '';
+  document.getElementById('metaUltimo').textContent = r.ultimo ? JSON.stringify(r.ultimo, null, 2) : 'sin eventos';
+}
+let galeriaFirma = '';
+// Una foto que todavía no bajaba se vuelve a pedir a los 3 s (hasta 10 veces)
+function reintentarFoto(img) {
+  const n = Number(img.dataset.intentos || 0);
+  if (n >= 10) return;
+  img.dataset.intentos = n + 1;
+  setTimeout(() => { img.src = img.src.replace(/&r=\d+$/, '') + '&r=' + (n + 1); }, 3000);
+}
+async function galeria() {
+  const g = await (await fetch(conCamara('/api/galeria'))).json();
+  const firma = JSON.stringify(g.map(p => [p.id, p.creado, p.activa, p.fotos.map(f => f.listo), p.calidad]));
+  if (firma === galeriaFirma) return;   // sin cambios: no se vuelve a dibujar
+  galeriaFirma = firma;
+  document.getElementById('galeria').innerHTML = g.map(p => `<div class="persona ${p.activa ? '' : 'inactiva'}">
+    <div class="nom">#${p.id} · ${p.nombre}
+      <button style="float:right;font-size:11px;padding:1px 6px" onclick="borrarPersona('${p.camara}', ${p.id}, '${p.nombre.replace(/'/g, '')}')">Borrar</button></div>
+    <div>${p.activa ? 'activa' : 'inactiva'} · ${p.plantillas.join(', ')} · ${p.creado ? new Date(p.creado * 1000).toLocaleString('es-MX') : ''}</div>
+    ${calidadHtml(p.calidad)}
+    <div class="fotos">${p.fotos.length ? p.fotos.map(f => `<div class="foto ${(f.contraste < 25 || (f.score ?? 1) < 0.70) ? 'mala' : ''}">
+      <a href="/galeria/${p.camara}/${p.id}/${f.k}.bmp?v=${p.creado}" target="_blank"><img src="/galeria/${p.camara}/${p.id}/${f.k}.bmp?v=${p.creado}" onerror="reintentarFoto(this)"></a>
+      <span>${f.plantilla || ''} ${n(f.score, 2)}<br>br ${f.brillo} · ct ${f.contraste}</span></div>`).join('') : '<span class="nota">bajando fotos…</span>'}</div>
+  </div>`).join('');
+}
+// Control de calidad del registro (calidad.py): bueno / revisar / débil / pendiente
+const CALIDAD = {bueno: ['✅ registro bueno', 'var(--ok)'], revisar: ['⚠ registro bueno, revisar', 'var(--duda)'],
+                 debil: ['❌ registro débil: repetir', 'var(--mal)'], pendiente: ['⏳ pendiente', 'var(--gris)'],
+                 sin_verificar: ['· sin verificar', 'var(--gris)']};
+function calidadHtml(c) {
+  if (!c) return '<div class="nota">calidad: calculando…</div>';
+  const [txt, color] = CALIDAD[c.estado] || [c.estado, 'var(--gris)'];
+  const avisos = (c.avisos || []).map(a => `<div style="color:${a.nivel === 'rojo' ? 'var(--mal)' : 'var(--duda)'}">• ${a.texto}${a.foto ? ` <a href="${a.foto}" target="_blank">ver</a>` : ''}</div>`).join('');
+  return `<div style="font-size:12px;margin:3px 0"><b style="color:${color}">${txt}</b> · ${c.texto}${avisos}</div>`;
+}
+const sel = document.getElementById('verCamara');
+if (![...sel.options].some(o => o.value === camara)) camara = '';   // cámara que ya no está en CAMARAS
+sel.value = camara;
+document.getElementById('exportar').href = conCamara('/export.csv');
+tick(); setInterval(tick, 2000);
+galeria(); setInterval(galeria, 10000);
+verRespaldos(); setInterval(verRespaldos, 30000);
+leerConfig();   // una vez al abrir: la config no se lee en cada tick para no cargar la cámara
+</script>
+</body>
+</html>
