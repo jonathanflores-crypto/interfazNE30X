@@ -62,6 +62,42 @@ def datos(r):
     return j["data"]
 
 
+HOST_IP = os.environ.get("HOST_IP", "")      # IP de esta PC en la red (la ponen levantar/actualizar)
+
+
+def cam_json(metodo, ip, ruta, intentos=4, **kw):
+    """Llama a la cámara reintentando: su servidor web a veces responde sin datos o con UNAUTHORIZED de más."""
+    ultimo = None
+    for _ in range(intentos):
+        try:
+            r = requests.request(metodo, f"http://{ip}/api/v1/{ruta}", auth=AUTH, timeout=15, **kw)
+            j = r.json()
+            if j.get("success"):
+                return j
+            ultimo = ErrorCamara(j.get("message") or f"HTTP {r.status_code}")
+        except Exception as e:  # noqa: BLE001
+            ultimo = e
+        time.sleep(1.5)
+    raise ultimo if ultimo else ErrorCamara("sin respuesta")
+
+
+def asegurar_mqtt(ip):
+    """Que la cámara mande su MQTT a esta PC (HOST_IP:1883). Para usar la interfaz en cualquier PC sin configurar
+    a mano: si la cámara apunta a otro broker se reapunta (grupo completo: si falta un campo, la cámara lo borra).
+    Devuelve un texto con lo que pasó."""
+    if not HOST_IP:
+        return "sin HOST_IP: no se revisó el MQTT (corre levantar/actualizar)"
+    c = cam_json("GET", ip, "apps/mqtt/config")["data"]
+    con = c.get("connection", {})
+    if con.get("hostname") == HOST_IP and int(con.get("port") or 0) == 1883 and c.get("status", {}).get("connected"):
+        return "MQTT ya apuntaba a esta PC"
+    antes = con.get("hostname")
+    con["hostname"], con["port"] = HOST_IP, 1883
+    cam_json("POST", ip, "apps/mqtt/config", json={"connection": con})
+    cam_json("POST", ip, "apps/mqtt/connect", json={})
+    return f"MQTT reapuntado de {antes} a {HOST_IP}"
+
+
 def motivo(e):
     """Explicación corta de un error al hablar con una cámara."""
     if isinstance(e, ErrorCamara):
@@ -434,6 +470,10 @@ def api_camaras():
             CAMARAS.append(ip)
             guardar_camaras()
             iniciar_camara(ip)
+            try:
+                estado.setdefault("mqtt_camaras", {})[ip] = asegurar_mqtt(ip)
+            except Exception as e:  # noqa: BLE001
+                estado.setdefault("mqtt_camaras", {})[ip] = f"no se pudo revisar el MQTT: {motivo(e)}"
         estado["camaras"][ip].update(nombre=d.get("device_name"), app=v.get("app"), web=v.get("web"))
         return jsonify(ok=True, camaras=CAMARAS, nombre=d.get("device_name"), app=v.get("app"), web=v.get("web"))
     return jsonify(camaras=[dict(ip=ip, **{k: estado["camaras"].get(ip, {}).get(k) for k in ("ok", "error", "nombre", "app", "web")})
@@ -554,6 +594,10 @@ def api_registro():
                 if any(p.get("name") == nombre for p in gente):
                     return jsonify(existe=True, error=f"ya existe {nombre}"), 409
             estado["pausa_hasta"] = time.time() + 5
+            try:
+                estado.setdefault("mqtt_camaras", {})[ip] = asegurar_mqtt(ip)   # la guía del registro llega por MQTT
+            except Exception as e:  # noqa: BLE001
+                estado.setdefault("mqtt_camaras", {})[ip] = f"no se pudo revisar el MQTT: {motivo(e)}"
             r = requests.post(f"http://{ip}/api/v1/faces/enroll", json={"name": nombre, "still": True},
                               auth=AUTH, timeout=10).json()
         if not r.get("success"):
@@ -573,8 +617,44 @@ def api_registro_guia():
         recientes = [v for v in guias.values() if time.time() - v.get("t", 0) < 5]
         g = recientes[0] if len(recientes) == 1 else {}
     ahora = time.time()
+    if ip in CAMARAS and ("t" not in g or ahora - g["t"] > 3):
+        # Plan B: sin guía por MQTT en 3 s, se lee el registro por HTTP (máx. una consulta por segundo)
+        h = guia_por_http(ip)
+        if h:
+            return jsonify(**h)
     return jsonify(guia=g.get("guia"), hace_s=round(ahora - g["t"], 1) if "t" in g else None,
                    resultado=g.get("resultado"), resultado_hace_s=round(ahora - g["tr"], 1) if "tr" in g else None)
+
+
+_guia_http = {}     # ip -> (hora, respuesta)
+
+
+def guia_por_http(ip):
+    """La guía del registro desde GET /faces (firmware 979/980: enrollment.step/hint) cuando no llega por MQTT."""
+    t, resp = _guia_http.get(ip, (0, None))
+    if time.time() - t < 1:
+        return resp
+    resp = None
+    try:
+        d = cam_json("GET", ip, "faces", intentos=2)["data"]
+        e = d.get("enrollment", {})
+        lado = {"pose_front": "centro", "pose_side_b": "izquierda", "pose_side_a": "derecha"}
+        hechos = [n for k, n in lado.items() if e.get(k)]
+        if e.get("active") and e.get("still"):
+            resp = dict(guia=dict(name=e.get("name"), step=e.get("step") or "centro", done=hechos,
+                                  skipped=e.get("poses_skipped") or [], hint=e.get("hint") or "quieto", eye_px=0,
+                                  eye_min=(d.get("enroll_check") or {}).get("min_eye_px", 22), eye_max=32, yaw=0,
+                                  luma=None, elapsed_s=0, step_left_s=0, last_rejected=e.get("last_rejected", ""),
+                                  fuente="http"),
+                        hace_s=0, resultado=None, resultado_hace_s=None)
+        elif not e.get("active") and e.get("result"):
+            resp = dict(guia=None, hace_s=None, resultado=dict(name=e.get("name"), mode="quieto",
+                        ok=e["result"].startswith("ok"), result=e["result"], done=hechos,
+                        skipped=e.get("poses_skipped") or []), resultado_hace_s=0)
+    except Exception:  # noqa: BLE001
+        resp = None
+    _guia_http[ip] = (time.time(), resp)
+    return resp
 
 
 @app.route("/api/borrar", methods=["POST"])

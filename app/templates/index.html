@@ -354,7 +354,8 @@ async function verGuia() {
   marca.style.display = g.eye_px > 0 ? '' : 'none';
   marca.style.left = `calc(${pct(g.eye_px)}% - 3px)`;
   marca.style.background = g.eye_px >= g.eye_min && g.eye_px <= g.eye_max ? 'var(--ok)' : 'var(--mal)';
-  document.getElementById('guiaDetalle').textContent =
+  document.getElementById('guiaDetalle').textContent = g.fuente === 'http'
+    ? `guía por HTTP (no llegó por MQTT)` + (g.last_rejected ? ` · última rechazada: ${g.last_rejected}` : '') :
     `${g.eye_px} px entre ojos (bien: ${g.eye_min}–${g.eye_max}) · giro ${g.yaw}` +
     (g.luma !== null ? ` · brillo ${g.luma}` : '') + ` · ${g.elapsed_s} s` +
     (g.last_rejected ? ` · última rechazada: ${g.last_rejected}` : '');
