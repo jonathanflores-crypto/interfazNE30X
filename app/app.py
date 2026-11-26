@@ -98,6 +98,20 @@ def asegurar_mqtt(ip):
     return f"MQTT reapuntado de {antes} a {HOST_IP}"
 
 
+def asegurar_pipeline(ip):
+    """Que la cámara esté procesando video. En la NE30x el pipeline de video + IA se apaga cuando se cierra la
+    vista en vivo de su web, y sin él no reconoce ni registra. POST /preview/start lo levanta (no pide clave).
+    Devuelve True si quedó corriendo."""
+    try:
+        st = (cam_json("GET", ip, "ai/status", intentos=2)["data"].get("pipeline") or {}).get("status")
+        if st == "running":
+            return True
+        r = requests.post(f"http://{ip}/api/v1/preview/start", json={}, timeout=15).json()
+        return bool((r.get("data") or {}).get("pipeline_running"))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def motivo(e):
     """Explicación corta de un error al hablar con una cámara."""
     if isinstance(e, ErrorCamara):
@@ -323,6 +337,7 @@ def hilo_camara(ip, turno):
                 info["performance"] = pf
                 info["people"] = s.get("people", [])
                 sincronizar_galeria(ip, info["people"])
+                info["pipeline"] = asegurar_pipeline(ip)    # sin video la cámara no reconoce: se levanta solo
                 if ciclo_testigos:
                     try:
                         ciclo_testigos(ip, s)
@@ -594,6 +609,8 @@ def api_registro():
                 if any(p.get("name") == nombre for p in gente):
                     return jsonify(existe=True, error=f"ya existe {nombre}"), 409
             estado["pausa_hasta"] = time.time() + 5
+            if not asegurar_pipeline(ip):
+                return jsonify(error="la cámara no está procesando video (pipeline detenido) y no se pudo arrancar"), 409
             try:
                 estado.setdefault("mqtt_camaras", {})[ip] = asegurar_mqtt(ip)   # la guía del registro llega por MQTT
             except Exception as e:  # noqa: BLE001
@@ -641,8 +658,10 @@ def guia_por_http(ip):
         lado = {"pose_front": "centro", "pose_side_b": "izquierda", "pose_side_a": "derecha"}
         hechos = [n for k, n in lado.items() if e.get(k)]
         if e.get("active") and e.get("still"):
+            corriendo = asegurar_pipeline(ip)
+            pista = e.get("hint") or ("quieto" if corriendo else "camara_detenida")
             resp = dict(guia=dict(name=e.get("name"), step=e.get("step") or "centro", done=hechos,
-                                  skipped=e.get("poses_skipped") or [], hint=e.get("hint") or "quieto", eye_px=0,
+                                  skipped=e.get("poses_skipped") or [], hint=pista, eye_px=0,
                                   eye_min=(d.get("enroll_check") or {}).get("min_eye_px", 22), eye_max=32, yaw=0,
                                   luma=None, elapsed_s=0, step_left_s=0, last_rejected=e.get("last_rejected", ""),
                                   fuente="http"),

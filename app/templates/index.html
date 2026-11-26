@@ -320,7 +320,7 @@ const PISTAS = {
   gira_menos: ['Gira menos', 'var(--duda)'], quieto: ['Quédate quieto…', 'var(--ok)'],
   foto_tomada: ['✓ Foto tomada', 'var(--ok)'], cara_poco_clara: ['Cara poco clara: quieto y de frente a la luz', 'var(--duda)'],
   falta_luz: ['Falta luz en la cara', 'var(--mal)'], otra_cara: ['Hay otra cara: que salga del cuadro', 'var(--mal)'],
-  sin_cara: ['No veo tu cara', 'var(--gris)'], nombre_de_otra_persona: ['Ese nombre ya es de otra persona', 'var(--mal)'], parecida_a_otro: ['Se parece a otra persona registrada', 'var(--mal)'],
+  sin_cara: ['No veo tu cara', 'var(--gris)'], camara_detenida: ['La cámara no está procesando video (se está reactivando)', 'var(--mal)'], nombre_de_otra_persona: ['Ese nombre ya es de otra persona', 'var(--mal)'], parecida_a_otro: ['Se parece a otra persona registrada', 'var(--mal)'],
 };
 async function verGuia() {
   const r = await (await fetch('/api/registro/guia?camara=' + encodeURIComponent(cfgIp()))).json();
