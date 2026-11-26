@@ -233,7 +233,7 @@ async function leerPresets() {
   const r = await (await fetch('/api/presets?camara=' + encodeURIComponent(ip))).json();
   const sel = document.getElementById('presetSel');
   if (r.presets && !sel.options.length) {
-    sel.innerHTML = r.presets.map(p => `<option value="${p.nombre}" title="${p.descripcion}">${p.nombre} (${p.estado})</option>`).join('');
+    sel.innerHTML = r.presets.map(p => `<option value="${p.nombre}" title="${p.descripcion}">${p.nombre} · ${p.uso || ''} (${p.estado})</option>`).join('');
   }
   const m = document.getElementById('presetMsg');
   if (r.error) { m.textContent = '⚠ ' + r.error; return; }

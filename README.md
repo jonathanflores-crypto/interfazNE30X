@@ -120,8 +120,8 @@ En la interfaz, la cámara aparece en *Versiones* y los eventos empiezan a llega
 las personas registradas, fotos y configuración se conservan.
 
 ## Presets de configuración
-La cámara no guarda presets: solo los valores que recibe. Los presets viven en `app/presets.json` (5: Escuela
-—probado—, Oficina Novus, Acceso de cerca, Pasillo y Poca luz / contraluz). En la página, sección
+La cámara no guarda presets: solo los valores que recibe. Los presets viven en `app/presets.json` (Preset 1 Escuela
+—probado—, Preset 2 Oficina Novus, Preset 3 Acceso de cerca, Preset 4 Pasillo y Preset 5 Poca luz / contraluz). En la página, sección
 *Configuración de la cámara*: elige el preset y **Aplicar a la cámara**; la interfaz manda los valores, los vuelve a
 leer y dice qué preset tiene la cámara (o «personalizado» si alguien la cambió a mano). Para cambiar valores,
 edita `app/presets.json` y corre `actualizar`.

@@ -2,7 +2,8 @@
   "_nota": "Presets que la interfaz manda a la cámara (POST /api/v1/faces/config). La cámara no guarda presets: solo los valores que recibe. Se pueden editar aquí; después correr actualizar.",
   "presets": [
     {
-      "nombre": "Escuela",
+      "nombre": "Preset 1",
+      "uso": "Escuela",
       "estado": "probado 25-nov-2026",
       "descripcion": "Gente caminando, poca luz, lentes. Sin confusiones entre personas en las pruebas.",
       "valores": {
@@ -17,7 +18,8 @@
       }
     },
     {
-      "nombre": "Oficina Novus",
+      "nombre": "Preset 2",
+      "uso": "Oficina Novus",
       "estado": "propuesta: medir",
       "descripcion": "Mejor luz que la escuela: threshold más bajo, mismo margen.",
       "valores": {
@@ -32,7 +34,8 @@
       }
     },
     {
-      "nombre": "Acceso de cerca",
+      "nombre": "Preset 3",
+      "uso": "Acceso de cerca",
       "estado": "propuesta: medir",
       "descripcion": "La persona se para frente a la cámara (~1 m): solo caras grandes y de frente.",
       "valores": {
@@ -47,7 +50,8 @@
       }
     },
     {
-      "nombre": "Pasillo",
+      "nombre": "Preset 4",
+      "uso": "Pasillo",
       "estado": "propuesta: medir",
       "descripcion": "Gente que pasa caminando más lejos: acepta caras más chicas con un margen más estricto.",
       "valores": {
@@ -62,7 +66,8 @@
       }
     },
     {
-      "nombre": "Poca luz / contraluz",
+      "nombre": "Preset 5",
+      "uso": "Poca luz / contraluz",
       "estado": "propuesta: medir",
       "descripcion": "Entradas con ventana o poca luz: margen estricto y descarta fotos sin contraste.",
       "valores": {
