@@ -1,0 +1,80 @@
+{
+  "_nota": "Presets que la interfaz manda a la cámara (POST /api/v1/faces/config). La cámara no guarda presets: solo los valores que recibe. Se pueden editar aquí; después correr actualizar.",
+  "presets": [
+    {
+      "nombre": "Escuela",
+      "estado": "probado 25-nov-2026",
+      "descripcion": "Gente caminando, poca luz, lentes. Sin confusiones entre personas en las pruebas.",
+      "valores": {
+        "threshold": 0.62,
+        "margin": 0.12,
+        "quality_min_eye": 18,
+        "enroll_min_eye": 22,
+        "quality_max_yaw": 0.45,
+        "fast_score": 0,
+        "strong_score": 0.8,
+        "quality_min_contrast": 0
+      }
+    },
+    {
+      "nombre": "Oficina Novus",
+      "estado": "propuesta: medir",
+      "descripcion": "Mejor luz que la escuela: threshold más bajo, mismo margen.",
+      "valores": {
+        "threshold": 0.58,
+        "margin": 0.12,
+        "quality_min_eye": 18,
+        "enroll_min_eye": 22,
+        "quality_max_yaw": 0.45,
+        "fast_score": 0,
+        "strong_score": 0.8,
+        "quality_min_contrast": 0
+      }
+    },
+    {
+      "nombre": "Acceso de cerca",
+      "estado": "propuesta: medir",
+      "descripcion": "La persona se para frente a la cámara (~1 m): solo caras grandes y de frente.",
+      "valores": {
+        "threshold": 0.6,
+        "margin": 0.1,
+        "quality_min_eye": 40,
+        "enroll_min_eye": 22,
+        "quality_max_yaw": 0.25,
+        "fast_score": 0,
+        "strong_score": 0.8,
+        "quality_min_contrast": 0
+      }
+    },
+    {
+      "nombre": "Pasillo",
+      "estado": "propuesta: medir",
+      "descripcion": "Gente que pasa caminando más lejos: acepta caras más chicas con un margen más estricto.",
+      "valores": {
+        "threshold": 0.62,
+        "margin": 0.15,
+        "quality_min_eye": 16,
+        "enroll_min_eye": 22,
+        "quality_max_yaw": 0.45,
+        "fast_score": 0,
+        "strong_score": 0.8,
+        "quality_min_contrast": 0
+      }
+    },
+    {
+      "nombre": "Poca luz / contraluz",
+      "estado": "propuesta: medir",
+      "descripcion": "Entradas con ventana o poca luz: margen estricto y descarta fotos sin contraste.",
+      "valores": {
+        "threshold": 0.62,
+        "margin": 0.15,
+        "quality_min_eye": 18,
+        "enroll_min_eye": 22,
+        "quality_max_yaw": 0.45,
+        "fast_score": 0,
+        "strong_score": 0.8,
+        "quality_min_contrast": 20
+      }
+    }
+  ]
+}

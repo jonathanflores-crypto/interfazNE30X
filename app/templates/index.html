@@ -109,6 +109,11 @@
 
   <section class="p-plataforma">
     <h2>Configuración de la cámara <span class="nota" id="cfgCam"></span></h2>
+    <div class="barra" style="margin-bottom:6px">
+      <b>Preset</b> <select id="presetSel" style="font:inherit"></select>
+      <button onclick="aplicarPreset()" style="font-weight:600">Aplicar a la cámara</button>
+      <span class="nota" id="presetMsg"></span>
+    </div>
     <div class="barra" id="cfg"></div>
     <div class="barra" style="margin-top:6px">
       <button onclick="leerConfig()">Leer de la cámara</button>
@@ -222,7 +227,33 @@ function pintarConfig(c) {
     return `<label style="margin-right:10px">${l} ${ctl}</label>`;
   }).join('');
 }
+// Presets: la interfaz manda los valores (presets.json) y la cámara se ajusta; la cámara no guarda presets
+async function leerPresets() {
+  const ip = cfgIp(); if (!ip) return;
+  const r = await (await fetch('/api/presets?camara=' + encodeURIComponent(ip))).json();
+  const sel = document.getElementById('presetSel');
+  if (r.presets && !sel.options.length) {
+    sel.innerHTML = r.presets.map(p => `<option value="${p.nombre}" title="${p.descripcion}">${p.nombre} (${p.estado})</option>`).join('');
+  }
+  const m = document.getElementById('presetMsg');
+  if (r.error) { m.textContent = '⚠ ' + r.error; return; }
+  m.innerHTML = r.preset ? `La cámara tiene: <b>${r.preset}</b>` : 'La cámara tiene: <b>personalizado</b> (no coincide con ningún preset)';
+  if (r.preset) sel.value = r.preset;
+}
+async function aplicarPreset() {
+  const ip = cfgIp(), nombre = document.getElementById('presetSel').value;
+  if (!ip || !nombre) return;
+  if (!confirm(`Aplicar el preset "${nombre}" a ${ip}?`)) return;
+  document.getElementById('presetMsg').textContent = 'Aplicando…';
+  const r = await (await fetch('/api/presets', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                                body: JSON.stringify({ip, nombre})})).json();
+  const m = document.getElementById('presetMsg');
+  if (r.error) { m.textContent = '⚠ ' + r.error; return; }
+  m.innerHTML = r.preset === nombre ? `✓ Aplicado y verificado: <b>${nombre}</b>` : `⚠ Se mandó, pero la cámara quedó como ${r.preset || 'personalizado'}`;
+  leerConfig();
+}
 async function leerConfig() {
+  leerPresets();
   const ip = cfgIp();
   document.getElementById('cfgCam').textContent = ip ? '· ' + ip : '';
   if (!ip) { document.getElementById('cfgMsg').textContent = 'Agrega o elige una cámara arriba.'; return; }

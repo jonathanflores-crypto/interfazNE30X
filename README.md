@@ -119,6 +119,13 @@ En la interfaz, la cámara aparece en *Versiones* y los eventos empiezan a llega
 `actualizar` baja lo último del repo (`git pull`) y reconstruye el contenedor. **No toca** `data/` ni `.env`:
 las personas registradas, fotos y configuración se conservan.
 
+## Presets de configuración
+La cámara no guarda presets: solo los valores que recibe. Los presets viven en `app/presets.json` (5: Escuela
+—probado—, Oficina Novus, Acceso de cerca, Pasillo y Poca luz / contraluz). En la página, sección
+*Configuración de la cámara*: elige el preset y **Aplicar a la cámara**; la interfaz manda los valores, los vuelve a
+leer y dice qué preset tiene la cámara (o «personalizado» si alguien la cambió a mano). Para cambiar valores,
+edita `app/presets.json` y corre `actualizar`.
+
 ## Modelo del control de calidad (no va en el repo)
 El control de calidad del registro usa `app/modelos/mfn_peleab_int8.onnx`, que **no se publica** (licencia)
 y se entrega aparte. Cópialo a `app/modelos/` y corre `actualizar`. Sin él todo lo demás funciona; en el log

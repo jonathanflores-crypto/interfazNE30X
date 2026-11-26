@@ -527,6 +527,58 @@ def corrida_en_curso():
                            (time.time() - 120,)).fetchone()
 
 
+# ---------------- Presets: la aplicación manda los valores y la cámara se ajusta ----------------
+PRESETS_JSON = os.path.join(os.path.dirname(__file__), "presets.json")
+# dónde está cada valor en GET /faces (la cámara no guarda presets: se compara valor por valor)
+_LECTURA = {"threshold": ("threshold",), "margin": ("margin",), "quality_min_eye": ("quality", "min_eye_px"),
+            "enroll_min_eye": ("enroll_check", "min_eye_px"), "quality_max_yaw": ("quality", "max_yaw"),
+            "fast_score": ("quality", "fast_score"), "strong_score": ("quality", "strong_score"),
+            "quality_min_contrast": ("quality", "min_contrast")}
+
+
+def cargar_presets():
+    with open(PRESETS_JSON) as fh:
+        return json.load(fh)["presets"]
+
+
+def valores_camara(d):
+    out = {}
+    for k, ruta in _LECTURA.items():
+        v = d
+        for paso in ruta:
+            v = (v or {}).get(paso)
+        out[k] = v
+    return out
+
+
+def preset_de(actual, presets):
+    """Nombre del preset que coincide con los valores de la cámara, o None (personalizado)."""
+    for p in presets:
+        if all(actual.get(k) is not None and abs(float(actual[k]) - float(v)) < 0.006 for k, v in p["valores"].items()):
+            return p["nombre"]
+    return None
+
+
+@app.route("/api/presets", methods=["GET", "POST"])
+def api_presets():
+    """GET ?camara=ip: presets y cuál tiene la cámara. POST {ip, nombre}: manda ese preset y lo verifica."""
+    presets = cargar_presets()
+    ip = request.args.get("camara", "") if request.method == "GET" else (request.json or {}).get("ip", "")
+    if ip not in CAMARAS:
+        return jsonify(error="elige una cámara", presets=presets), 400
+    try:
+        if request.method == "POST":
+            nombre = (request.json or {}).get("nombre")
+            p = next((x for x in presets if x["nombre"] == nombre), None)
+            if not p:
+                return jsonify(error=f"no existe el preset {nombre}"), 400
+            cam_json("POST", ip, "faces/config", json=p["valores"])
+        actual = valores_camara(cam_json("GET", ip, "faces")["data"])
+        return jsonify(presets=presets, actual=actual, preset=preset_de(actual, presets))
+    except Exception as e:  # noqa: BLE001
+        return jsonify(error=f"la cámara: {motivo(e)}", presets=presets), 502
+
+
 @app.route("/api/config", methods=["GET", "POST"])
 def api_config():
     if request.method == "GET":
