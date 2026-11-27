@@ -20,10 +20,10 @@
     {
       "nombre": "Preset 2",
       "uso": "Oficina Novus",
-      "estado": "propuesta: medir",
-      "descripcion": "Mejor luz que la escuela: threshold más bajo, mismo margen.",
+      "estado": "propuesta 27-nov-2026 (datos .18/.33 del 26–27-nov)",
+      "descripcion": "Oficina con buena luz: threshold 0.56 recupera a registrados que quedaban en 0.56–0.62; el margen 0.12 frena a la persona equivocada (llegó a 0.594 con margen 0.13).",
       "valores": {
-        "threshold": 0.58,
+        "threshold": 0.56,
         "margin": 0.12,
         "quality_min_eye": 18,
         "enroll_min_eye": 22,
