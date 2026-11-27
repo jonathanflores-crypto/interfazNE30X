@@ -899,5 +899,7 @@ if __name__ == "__main__":
     for ip in CAMARAS:
         iniciar_camara(ip)
     banco.instalar(app, db, estado, AUTH)
+    import registros   # todos los intentos y eventos en un CSV por día (data/registros/) y Excel del día
+    registros.instalar(app, db, os.path.dirname(DB) or ".")
     threading.Thread(target=hilo_mqtt, daemon=True).start()
     app.run(host="0.0.0.0", port=8000, threaded=True)

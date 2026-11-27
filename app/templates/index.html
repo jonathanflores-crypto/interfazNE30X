@@ -154,7 +154,16 @@
   </section>
 
   <section class="p-plataforma">
-    <h2>Intentos en vivo <span class="nota">(los 20 más recientes; cada cara que pasó por el modelo; la foto de cada intento se baja al servidor al momento; «perdida» si la cámara la borró antes)</span></h2>
+    <h2>Intentos en vivo <span class="nota" id="intentosNota">(los 20 más recientes; cada cara que pasó por el modelo; la foto de cada intento se baja al servidor al momento; «perdida» si la cámara la borró antes)</span></h2>
+    <div class="barra" style="margin-bottom:6px">
+      <b>Registros del día:</b>
+      <input type="date" id="diaRegistros" onchange="cambiarDia()">
+      <button id="verDia" onclick="verDia = !verDia; diaCargado = 0; tick()">Ver todo el día</button>
+      <a id="xlsxDia" href="#">Excel del día</a> ·
+      <a id="csvIntentos" href="#">CSV intentos</a> ·
+      <a id="csvEventos" href="#">CSV eventos</a>
+      <span class="nota">Todo se guarda en data/registros/ (un CSV por día, se llena solo)</span>
+    </div>
     <table id="intentos"><thead><tr><th>Hora</th><th>Cámara</th><th>#</th><th>Foto</th><th>Resultado</th><th>1.er lugar</th>
       <th>Puntaje</th><th>2.º lugar</th><th>Puntaje</th><th>Ventaja</th><th>Huella</th><th>Ojos px</th><th>Det</th><th>Prueba</th></tr></thead><tbody></tbody></table>
   </section>
@@ -426,6 +435,34 @@ async function marcar(nombre) {
   tick();
 }
 function tarjeta(v, l) { return `<div class="tarjeta"><div class="v">${v}</div><div class="l">${l}</div></div>`; }
+const filaIntento = i => `<tr>
+    <td>${hora(i.ts)}</td><td>${i.camara}</td><td>${i.seq}</td>
+    <td>${i.foto === 'perdida' ? '<span class="nota">perdida</span>' : `<a href="/foto/${i.camara}/${i.arranque}/${i.seq}" target="_blank">ver</a>`}</td>
+    <td class="${i.resultado}">${i.resultado}</td><td>${i.persona || ''}</td><td>${n(i.score)}</td>
+    <td>${i.segundo || ''}</td><td>${n(i.score2)}</td><td>${n((i.score || 0) - (i.score2 || 0))}</td>
+    <td>${i.plantilla || ''}</td><td>${n(i.ojos, 0)}</td><td>${n(i.conf, 2)}</td><td>${i.prueba || ''}</td></tr>`;
+// Registros del día (registros.py): todo el día en la tabla, Excel y CSV; el día se elige arriba de la tabla
+const hoyLocal = () => new Date().toLocaleDateString('en-CA');   // AAAA-MM-DD en la hora de este equipo
+let verDia = false, diaCargado = 0;
+document.getElementById('diaRegistros').value = hoyLocal();
+function cambiarDia() {
+  const d = document.getElementById('diaRegistros').value || hoyLocal();
+  document.getElementById('xlsxDia').href = `/registros/${d}.xlsx`;
+  document.getElementById('csvIntentos').href = `/registros/${d}_intentos.csv`;
+  document.getElementById('csvEventos').href = `/registros/${d}_eventos.csv`;
+  diaCargado = 0;
+  if (verDia) tick();
+}
+cambiarDia();
+async function intentosDelDia() {
+  if (Date.now() - diaCargado < 10000) return;    // el día completo se relee cada 10 s, no cada 2
+  diaCargado = Date.now();
+  const d = document.getElementById('diaRegistros').value || hoyLocal();
+  const url = `/api/registros?fecha=${d}` + (camara ? `&camara=${encodeURIComponent(camara)}` : '');
+  const r = await (await fetch(url)).json();
+  document.getElementById('intentosNota').textContent = `(todo el ${d}: ${r.intentos.length} intentos, el más nuevo arriba)`;
+  document.querySelector('#intentos tbody').innerHTML = r.intentos.map(filaIntento).join('');
+}
 async function tick() {
   const r = await (await fetch(conCamara('/api/estado'))).json();
   const e = r.estado;
@@ -457,12 +494,12 @@ async function tick() {
       <td>${v.energia || ''}${v.bateria != null && v.energia === 'battery' ? ' · ' + v.bateria + ' %' : ''}${v.red ? ' · ' + v.red : ''}</td>
       <td>${c.versiones_ts ? hora(c.versiones_ts) : ''}</td></tr>`;
   }).join('');
-  document.querySelector('#intentos tbody').innerHTML = r.intentos.slice(0, 20).map(i => `<tr>
-    <td>${hora(i.ts)}</td><td>${i.camara}</td><td>${i.seq}</td>
-    <td>${i.foto === 'perdida' ? '<span class="nota">perdida</span>' : `<a href="/foto/${i.camara}/${i.arranque}/${i.seq}" target="_blank">ver</a>`}</td>
-    <td class="${i.resultado}">${i.resultado}</td><td>${i.persona || ''}</td><td>${n(i.score)}</td>
-    <td>${i.segundo || ''}</td><td>${n(i.score2)}</td><td>${n((i.score || 0) - (i.score2 || 0))}</td>
-    <td>${i.plantilla || ''}</td><td>${n(i.ojos, 0)}</td><td>${n(i.conf, 2)}</td><td>${i.prueba || ''}</td></tr>`).join('');
+  document.getElementById('verDia').textContent = verDia ? 'Solo los 20 recientes' : 'Ver todo el día';
+  if (verDia) await intentosDelDia();
+  else {
+    document.getElementById('intentosNota').textContent = '(los 20 más recientes; cada cara que pasó por el modelo; la foto de cada intento se baja al servidor al momento; «perdida» si la cámara la borró antes)';
+    document.querySelector('#intentos tbody').innerHTML = r.intentos.slice(0, 20).map(filaIntento).join('');
+  }
   document.querySelector('#eventos tbody').innerHTML = r.eventos.slice(0, 15).map(v => `<tr><td>${hora(v.ts)}</td><td>${v.camara}</td>
     <td>${v.tipo}</td><td>${v.persona || ''}</td><td>${n(v.score)}</td><td>${v.tiempo_ms ?? ''}${v.tiempo_ms ? ' ms' : ''}</td></tr>`).join('');
   if (document.body.dataset.pestana === 'plataforma') return rendimiento();

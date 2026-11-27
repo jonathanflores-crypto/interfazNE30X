@@ -119,6 +119,14 @@ En la interfaz, la cámara aparece en *Versiones* y los eventos empiezan a llega
 `actualizar` baja lo último del repo (`git pull`) y reconstruye el contenedor. **No toca** `data/` ni `.env`:
 las personas registradas, fotos y configuración se conservan.
 
+## Registros del día (CSV y Excel)
+Todo intento de reconocimiento y todo evento MQTT se guarda en la base y, cada 5 s, se pasa a un CSV por día:
+`data/registros/AAAA-MM-DD_intentos.csv` y `AAAA-MM-DD_eventos.csv` (hora de México; se cambia con `ZONA` en el
+`.env`). La primera vez se escriben también los días que ya estaban en la base. En la página, arriba de *Intentos en
+vivo*: elige el día y **Ver todo el día** (la tabla deja de mostrar solo los 20 recientes), **Excel del día** (dos
+hojas: Intentos y Eventos) o los CSV. Para volver a generar los CSV desde la base: borra `data/registros/` y corre
+`actualizar`.
+
 ## Presets de configuración
 La cámara no guarda presets: solo los valores que recibe. Los presets viven en `app/presets.json` (Preset 1 Escuela
 —probado—, Preset 2 Oficina Novus, Preset 3 Acceso de cerca, Preset 4 Pasillo y Preset 5 Poca luz / contraluz). En la página, sección
