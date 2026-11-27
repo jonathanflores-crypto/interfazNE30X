@@ -130,8 +130,12 @@ def instalar(app, db, datos_dir):
 
     @app.route("/registros/<nombre>.csv")
     def registro_csv(nombre):
-        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}_(intentos|eventos)", nombre):
+        m = re.fullmatch(r"\d{4}-\d{2}-\d{2}_(intentos|eventos)", nombre)
+        if not m:
             abort(404)
+        if not os.path.exists(os.path.join(carpeta, nombre + ".csv")):   # día sin registros: solo los encabezados
+            return Response("﻿" + ",".join(TABLAS[m.group(1)][0]) + "\r\n", mimetype="text/csv",
+                            headers={"Content-Disposition": f"attachment; filename={nombre}.csv"})
         return send_from_directory(carpeta, nombre + ".csv", as_attachment=True, mimetype="text/csv")
 
     @app.route("/registros/<fecha>.xlsx")

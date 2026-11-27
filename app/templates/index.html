@@ -27,6 +27,9 @@
   .barra { display:flex; gap:8px; align-items:center; flex-wrap:wrap; font-size:13px; }
   input, button { font:inherit; padding:4px 8px; }
   .nota { font-size:12px; color:var(--gris); }
+  section.registros { border-color:var(--ok); }
+  a.boton { background:var(--ok); color:#fff; text-decoration:none; padding:5px 12px; border-radius:6px; font-weight:600; }
+  a.boton.secundario { background:#fff; color:var(--ok); border:1px solid var(--ok); font-weight:500; }
   .galeria { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:10px; }
   .persona { border:1px solid var(--borde); border-radius:8px; padding:8px; font-size:12px; }
   .persona.inactiva { opacity:.45; }
@@ -66,13 +69,25 @@
   <button data-p="pruebas" onclick="verPestana('pruebas'); tick()">Pruebas</button>
 </nav>
 <main>
+  <section class="registros">
+    <div class="barra">
+      <b>Registros del día</b>
+      <input type="date" id="diaRegistros" onchange="cambiarDia()">
+      <a class="boton" id="csvIntentos" href="#">⬇ CSV de registros</a>
+      <a class="boton" id="xlsxDia" href="#">⬇ Excel del día</a>
+      <a class="boton secundario" id="csvEventos" href="#">⬇ CSV de eventos MQTT</a>
+      <button id="verDia" onclick="verDia = !verDia; diaCargado = 0; verPestana('plataforma'); tick()">Ver todo el día</button>
+      <span class="nota" id="diaNota">Cada intento de reconocimiento se guarda con fecha y hora en data/registros/ (un CSV por día, se llena solo)</span>
+    </div>
+  </section>
+
   <div class="tarjetas p-plataforma" id="tarjetas"></div>
 
   <section class="p-plataforma">
     <h2>Tiempo al reconocimiento <span class="nota">(desde que la cámara ve la cara hasta que la nombra · time_to_identify_ms de cada evento face_recognized · contadores de hoy)</span></h2>
     <div class="tarjetas" id="rendTarjetas"></div>
     <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:8px">
-      <table id="rendRecientes" style="width:auto;min-width:420px"><thead><tr><th>Hora</th><th>Persona</th><th>Puntaje</th>
+      <table id="rendRecientes" style="width:auto;min-width:420px"><thead><tr><th>Fecha y hora</th><th>Persona</th><th>Puntaje</th>
         <th>Tiempo al nombre</th></tr></thead><tbody></tbody></table>
       <details style="flex:1;min-width:320px"><summary>Metadata del último evento MQTT <span class="nota" id="metaTipo"></span></summary>
         <pre class="meta" id="metaUltimo"></pre></details>
@@ -155,16 +170,7 @@
 
   <section class="p-plataforma">
     <h2>Intentos en vivo <span class="nota" id="intentosNota">(los 20 más recientes; cada cara que pasó por el modelo; la foto de cada intento se baja al servidor al momento; «perdida» si la cámara la borró antes)</span></h2>
-    <div class="barra" style="margin-bottom:6px">
-      <b>Registros del día:</b>
-      <input type="date" id="diaRegistros" onchange="cambiarDia()">
-      <button id="verDia" onclick="verDia = !verDia; diaCargado = 0; tick()">Ver todo el día</button>
-      <a id="xlsxDia" href="#">Excel del día</a> ·
-      <a id="csvIntentos" href="#">CSV intentos</a> ·
-      <a id="csvEventos" href="#">CSV eventos</a>
-      <span class="nota">Todo se guarda en data/registros/ (un CSV por día, se llena solo)</span>
-    </div>
-    <table id="intentos"><thead><tr><th>Hora</th><th>Cámara</th><th>#</th><th>Foto</th><th>Resultado</th><th>1.er lugar</th>
+    <table id="intentos"><thead><tr><th>Fecha y hora</th><th>Cámara</th><th>#</th><th>Foto</th><th>Resultado</th><th>1.er lugar</th>
       <th>Puntaje</th><th>2.º lugar</th><th>Puntaje</th><th>Ventaja</th><th>Huella</th><th>Ojos px</th><th>Det</th><th>Prueba</th></tr></thead><tbody></tbody></table>
   </section>
 
@@ -175,11 +181,13 @@
 
   <section class="p-plataforma">
     <h2>Eventos MQTT <span class="nota">(los 15 más recientes)</span></h2>
-    <table id="eventos"><thead><tr><th>Hora</th><th>Cámara</th><th>Tipo</th><th>Persona</th><th>Puntaje</th><th>Tiempo al nombre</th></tr></thead><tbody></tbody></table>
+    <table id="eventos"><thead><tr><th>Fecha y hora</th><th>Cámara</th><th>Tipo</th><th>Persona</th><th>Puntaje</th><th>Tiempo al nombre</th></tr></thead><tbody></tbody></table>
   </section>
 </main>
 <script>
 const hora = ts => new Date(ts * 1000).toLocaleTimeString('es-MX');
+const fechaHora = ts => new Date(ts * 1000).toLocaleString('es-MX', {day: '2-digit', month: '2-digit', year: 'numeric',
+  hour: '2-digit', minute: '2-digit', second: '2-digit'});
 // Pestañas: «Plataforma» para mostrar, «Pruebas» para trabajar; se recuerda en este navegador
 function verPestana(p) {
   document.body.dataset.pestana = p;
@@ -436,7 +444,7 @@ async function marcar(nombre) {
 }
 function tarjeta(v, l) { return `<div class="tarjeta"><div class="v">${v}</div><div class="l">${l}</div></div>`; }
 const filaIntento = i => `<tr>
-    <td>${hora(i.ts)}</td><td>${i.camara}</td><td>${i.seq}</td>
+    <td>${fechaHora(i.ts)}</td><td>${i.camara}</td><td>${i.seq}</td>
     <td>${i.foto === 'perdida' ? '<span class="nota">perdida</span>' : `<a href="/foto/${i.camara}/${i.arranque}/${i.seq}" target="_blank">ver</a>`}</td>
     <td class="${i.resultado}">${i.resultado}</td><td>${i.persona || ''}</td><td>${n(i.score)}</td>
     <td>${i.segundo || ''}</td><td>${n(i.score2)}</td><td>${n((i.score || 0) - (i.score2 || 0))}</td>
@@ -500,7 +508,7 @@ async function tick() {
     document.getElementById('intentosNota').textContent = '(los 20 más recientes; cada cara que pasó por el modelo; la foto de cada intento se baja al servidor al momento; «perdida» si la cámara la borró antes)';
     document.querySelector('#intentos tbody').innerHTML = r.intentos.slice(0, 20).map(filaIntento).join('');
   }
-  document.querySelector('#eventos tbody').innerHTML = r.eventos.slice(0, 15).map(v => `<tr><td>${hora(v.ts)}</td><td>${v.camara}</td>
+  document.querySelector('#eventos tbody').innerHTML = r.eventos.slice(0, 15).map(v => `<tr><td>${fechaHora(v.ts)}</td><td>${v.camara}</td>
     <td>${v.tipo}</td><td>${v.persona || ''}</td><td>${n(v.score)}</td><td>${v.tiempo_ms ?? ''}${v.tiempo_ms ? ' ms' : ''}</td></tr>`).join('');
   if (document.body.dataset.pestana === 'plataforma') return rendimiento();
   // el resumen solo se calcula si se está viendo
@@ -523,7 +531,7 @@ async function rendimiento() {
     tarjeta(ms(t.mediana), `mediana de hoy (${t.n})`) + tarjeta(ms(t.p90), '90 % de las veces, menos de') +
     tarjeta(`${ms(t.minimo)} – ${ms(t.maximo)}`, 'más rápido – más lento hoy') + tarjeta(ms(t.promedio), 'promedio de hoy') +
     tarjeta(h.reconocidos, 'reconocidos hoy') + tarjeta(h.desconocidos, 'desconocidos hoy');
-  document.querySelector('#rendRecientes tbody').innerHTML = r.recientes.map(e => `<tr><td>${hora(e.ts)}</td>
+  document.querySelector('#rendRecientes tbody').innerHTML = r.recientes.map(e => `<tr><td>${fechaHora(e.ts)}</td>
     <td class="reconocido">${e.persona || ''}</td><td>${n(e.score)}</td><td><b>${ms(e.tiempo_ms)}</b></td></tr>`).join('')
     || '<tr><td colspan="4" class="nota">sin reconocimientos todavía</td></tr>';
   document.getElementById('metaTipo').textContent = r.ultimo ? `· ${r.ultimo.type} · ${r.ultimo.time_local || ''}` : '';
